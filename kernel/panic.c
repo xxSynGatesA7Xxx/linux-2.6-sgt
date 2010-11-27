@@ -10,7 +10,6 @@
  */
 #include <linux/debug_locks.h>
 #include <linux/interrupt.h>
-#include <linux/kmsg_dump.h>
 #include <linux/kallsyms.h>
 #include <linux/notifier.h>
 #include <linux/module.h>
@@ -23,9 +22,9 @@
 #include <linux/init.h>
 #include <linux/nmi.h>
 #include <linux/dmi.h>
-
-#define PANIC_TIMER_STEP 100
-#define PANIC_BLINK_SPD 18
+#ifdef CONFIG_KERNEL_DEBUG_SEC
+#include <linux/kernel_sec_common.h>
+#endif
 
 int panic_on_oops;
 static unsigned long tainted_mask;
@@ -33,19 +32,22 @@ static int pause_on_oops;
 static int pause_on_oops_flag;
 static DEFINE_SPINLOCK(pause_on_oops_lock);
 
-int panic_timeout;
+#ifndef CONFIG_PANIC_TIMEOUT
+#define CONFIG_PANIC_TIMEOUT 0
+#endif
+int panic_timeout = CONFIG_PANIC_TIMEOUT;
 
 ATOMIC_NOTIFIER_HEAD(panic_notifier_list);
 
 EXPORT_SYMBOL(panic_notifier_list);
 
-static long no_blink(int state)
+static long no_blink(long time)
 {
 	return 0;
 }
 
 /* Returns how long it waited in ms */
-long (*panic_blink)(int state);
+long (*panic_blink)(long time);
 EXPORT_SYMBOL(panic_blink);
 
 /**
@@ -60,8 +62,14 @@ NORET_TYPE void panic(const char * fmt, ...)
 {
 	static char buf[1024];
 	va_list args;
-	long i, i_next = 0;
-	int state = 0;
+	long i;
+
+#ifdef CONFIG_KERNEL_DEBUG_SEC
+#ifdef CONFIG_TARGET_LOCALE_KOR 
+	local_irq_disable();
+	local_fiq_disable();
+#endif /* CONFIG_TARGET_LOCALE_KOR */
+#endif /* CONFIG_KERNEL_DEBUG_SEC */
 
 	/*
 	 * It's possible to come here directly from a panic-assertion and
@@ -70,7 +78,6 @@ NORET_TYPE void panic(const char * fmt, ...)
 	 */
 	preempt_disable();
 
-	console_verbose();
 	bust_spinlocks(1);
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, args);
@@ -86,8 +93,6 @@ NORET_TYPE void panic(const char * fmt, ...)
 	 * Do we want to call this before we try to display a message?
 	 */
 	crash_kexec(NULL);
-
-	kmsg_dump(KMSG_DUMP_PANIC);
 
 	/*
 	 * Note smp_send_stop is the usual smp shutdown function, which
@@ -110,14 +115,30 @@ NORET_TYPE void panic(const char * fmt, ...)
 		 */
 		printk(KERN_EMERG "Rebooting in %d seconds..", panic_timeout);
 
-		for (i = 0; i < panic_timeout * 1000; i += PANIC_TIMER_STEP) {
+#ifndef CONFIG_KERNEL_DEBUG_SEC
+		for (i = 0; i < panic_timeout*1000; ) {
 			touch_nmi_watchdog();
-			if (i >= i_next) {
-				i += panic_blink(state ^= 1);
-				i_next = i + 3600 / PANIC_BLINK_SPD;
-			}
-			mdelay(PANIC_TIMER_STEP);
+			i += panic_blink(i);
+			mdelay(1);
+			i++;
 		}
+#else
+		/*
+		 * TODO : debugLevel considerationi should be done. (tkhwang)
+		 *        bluescreen display will be necessary.
+		 */
+		kernel_sec_set_cp_upload(); 
+		kernel_sec_save_final_context();
+#ifdef CONFIG_TARGET_LOCALE_KOR 
+		if ( 0 == strncmp("Fatal exception", fmt, sizeof("Fatal exception")) )
+			kernel_sec_set_upload_cause(UPLOAD_CAUSE_KERNEL_PANIC);
+		else
+			kernel_sec_set_upload_cause(UPLOAD_CAUSE_USER_FAULT);
+#else
+		kernel_sec_set_upload_cause(UPLOAD_CAUSE_KERNEL_PANIC);
+#endif
+		kernel_sec_hw_reset(false);
+#endif
 		/*
 		 * This will not be a clean reboot, with everything
 		 * shutting down.  But if there is a chance of
@@ -141,15 +162,33 @@ NORET_TYPE void panic(const char * fmt, ...)
 		disabled_wait(caller);
 	}
 #endif
+#ifndef CONFIG_KERNEL_DEBUG_SEC	
 	local_irq_enable();
-	for (i = 0; ; i += PANIC_TIMER_STEP) {
+
+	for (i = 0;;) {
 		touch_softlockup_watchdog();
-		if (i >= i_next) {
-			i += panic_blink(state ^= 1);
-			i_next = i + 3600 / PANIC_BLINK_SPD;
-		}
-		mdelay(PANIC_TIMER_STEP);
+		i += panic_blink(i);
+		mdelay(1);
+		i++;
 	}
+#else
+	/*
+	 * TODO : debugLevel considerationi should be done. (tkhwang)
+	 *        bluescreen display will be necessary.
+	 */
+	kernel_sec_set_cp_upload(); 
+	kernel_sec_save_final_context();
+#ifdef CONFIG_TARGET_LOCALE_KOR 
+	if ( 0 == strncmp("Fatal exception", fmt, sizeof("Fatal exception")) )
+		kernel_sec_set_upload_cause(UPLOAD_CAUSE_KERNEL_PANIC);
+	else
+		kernel_sec_set_upload_cause(UPLOAD_CAUSE_USER_FAULT);
+#else
+	kernel_sec_set_upload_cause(UPLOAD_CAUSE_KERNEL_PANIC);
+#endif
+	kernel_sec_hw_reset(false);
+#endif		
+
 }
 
 EXPORT_SYMBOL(panic);
@@ -173,7 +212,6 @@ static const struct tnt tnts[] = {
 	{ TAINT_OVERRIDDEN_ACPI_TABLE,	'A', ' ' },
 	{ TAINT_WARN,			'W', ' ' },
 	{ TAINT_CRAP,			'C', ' ' },
-	{ TAINT_FIRMWARE_WORKAROUND,	'I', ' ' },
 };
 
 /**
@@ -190,7 +228,6 @@ static const struct tnt tnts[] = {
  *  'A' - ACPI table overridden.
  *  'W' - Taint on warning.
  *  'C' - modules from drivers/staging are loaded.
- *  'I' - Working around severe firmware bug.
  *
  *	The string is overwritten by the next call to print_tainted().
  */
@@ -338,7 +375,7 @@ static int init_oops_id(void)
 }
 late_initcall(init_oops_id);
 
-void print_oops_end_marker(void)
+static void print_oops_end_marker(void)
 {
 	init_oops_id();
 	printk(KERN_WARNING "---[ end trace %016llx ]---\n",
@@ -353,7 +390,6 @@ void oops_exit(void)
 {
 	do_oops_enter_exit();
 	print_oops_end_marker();
-	kmsg_dump(KMSG_DUMP_OOPS);
 }
 
 #ifdef WANT_WARN_ON_SLOWPATH
@@ -362,8 +398,7 @@ struct slowpath_args {
 	va_list args;
 };
 
-static void warn_slowpath_common(const char *file, int line, void *caller,
-				 unsigned taint, struct slowpath_args *args)
+static void warn_slowpath_common(const char *file, int line, void *caller, struct slowpath_args *args)
 {
 	const char *board;
 
@@ -379,7 +414,7 @@ static void warn_slowpath_common(const char *file, int line, void *caller,
 	print_modules();
 	dump_stack();
 	print_oops_end_marker();
-	add_taint(taint);
+	add_taint(TAINT_WARN);
 }
 
 void warn_slowpath_fmt(const char *file, int line, const char *fmt, ...)
@@ -388,29 +423,14 @@ void warn_slowpath_fmt(const char *file, int line, const char *fmt, ...)
 
 	args.fmt = fmt;
 	va_start(args.args, fmt);
-	warn_slowpath_common(file, line, __builtin_return_address(0),
-			     TAINT_WARN, &args);
+	warn_slowpath_common(file, line, __builtin_return_address(0), &args);
 	va_end(args.args);
 }
 EXPORT_SYMBOL(warn_slowpath_fmt);
 
-void warn_slowpath_fmt_taint(const char *file, int line,
-			     unsigned taint, const char *fmt, ...)
-{
-	struct slowpath_args args;
-
-	args.fmt = fmt;
-	va_start(args.args, fmt);
-	warn_slowpath_common(file, line, __builtin_return_address(0),
-			     taint, &args);
-	va_end(args.args);
-}
-EXPORT_SYMBOL(warn_slowpath_fmt_taint);
-
 void warn_slowpath_null(const char *file, int line)
 {
-	warn_slowpath_common(file, line, __builtin_return_address(0),
-			     TAINT_WARN, NULL);
+	warn_slowpath_common(file, line, __builtin_return_address(0), NULL);
 }
 EXPORT_SYMBOL(warn_slowpath_null);
 #endif

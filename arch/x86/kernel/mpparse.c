@@ -11,7 +11,6 @@
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/bootmem.h>
-#include <linux/memblock.h>
 #include <linux/kernel_stat.h>
 #include <linux/mc146818rtc.h>
 #include <linux/bitops.h>
@@ -116,6 +115,21 @@ static void __init MP_bus_info(struct mpc_bus *m)
 		printk(KERN_WARNING "Unknown bustype %s - ignoring\n", str);
 }
 
+static int bad_ioapic(unsigned long address)
+{
+	if (nr_ioapics >= MAX_IO_APICS) {
+		printk(KERN_ERR "ERROR: Max # of I/O APICs (%d) exceeded "
+		       "(found %d)\n", MAX_IO_APICS, nr_ioapics);
+		panic("Recompile kernel with bigger MAX_IO_APICS!\n");
+	}
+	if (!address) {
+		printk(KERN_ERR "WARNING: Bogus (zero) I/O APIC address"
+		       " found in table, skipping!\n");
+		return 1;
+	}
+	return 0;
+}
+
 static void __init MP_ioapic_info(struct mpc_ioapic *m)
 {
 	if (!(m->flags & MPC_APIC_USABLE))
@@ -124,7 +138,15 @@ static void __init MP_ioapic_info(struct mpc_ioapic *m)
 	printk(KERN_INFO "I/O APIC #%d Version %d at 0x%X.\n",
 	       m->apicid, m->apicver, m->apicaddr);
 
-	mp_register_ioapic(m->apicid, m->apicaddr, gsi_top);
+	if (bad_ioapic(m->apicaddr))
+		return;
+
+	mp_ioapics[nr_ioapics].apicaddr = m->apicaddr;
+	mp_ioapics[nr_ioapics].apicid = m->apicid;
+	mp_ioapics[nr_ioapics].type = m->type;
+	mp_ioapics[nr_ioapics].apicver = m->apicver;
+	mp_ioapics[nr_ioapics].flags = m->flags;
+	nr_ioapics++;
 }
 
 static void print_MP_intsrc_info(struct mpc_intsrc *m)
@@ -275,18 +297,6 @@ static void __init smp_dump_mptable(struct mpc_table *mpc, unsigned char *mpt)
 
 void __init default_smp_read_mpc_oem(struct mpc_table *mpc) { }
 
-static void __init smp_register_lapic_address(unsigned long address)
-{
-	mp_lapic_addr = address;
-
-	set_fixmap_nocache(FIX_APIC_BASE, address);
-	if (boot_cpu_physical_apicid == -1U) {
-		boot_cpu_physical_apicid  = read_apic_id();
-		apic_version[boot_cpu_physical_apicid] =
-			 GET_APIC_VERSION(apic_read(APIC_LVR));
-	}
-}
-
 static int __init smp_read_mpc(struct mpc_table *mpc, unsigned early)
 {
 	char str[16];
@@ -307,10 +317,6 @@ static int __init smp_read_mpc(struct mpc_table *mpc, unsigned early)
 
 	if (early)
 		return 1;
-
-	/* Initialize the lapic mapping */
-	if (!acpi_lapic)
-		smp_register_lapic_address(mpc->lapic);
 
 	if (mpc->oemptr)
 		x86_init.mpparse.smp_read_mpc_oem(mpc);
@@ -352,6 +358,13 @@ static int __init smp_read_mpc(struct mpc_table *mpc, unsigned early)
 		}
 		x86_init.mpparse.mpc_record(1);
 	}
+
+#ifdef CONFIG_X86_BIGSMP
+	generic_bigsmp_probe();
+#endif
+
+	if (apic->setup_apic_routing)
+		apic->setup_apic_routing();
 
 	if (!num_processors)
 		printk(KERN_ERR "MPTABLE: no processors registered!\n");
@@ -654,18 +667,36 @@ void __init default_get_smp_config(unsigned int early)
 	 */
 }
 
-static void __init smp_reserve_memory(struct mpf_intel *mpf)
+static void __init smp_reserve_bootmem(struct mpf_intel *mpf)
 {
 	unsigned long size = get_mpc_size(mpf->physptr);
+#ifdef CONFIG_X86_32
+	/*
+	 * We cannot access to MPC table to compute table size yet,
+	 * as only few megabytes from the bottom is mapped now.
+	 * PC-9800's MPC table places on the very last of physical
+	 * memory; so that simply reserving PAGE_SIZE from mpf->physptr
+	 * yields BUG() in reserve_bootmem.
+	 * also need to make sure physptr is below than max_low_pfn
+	 * we don't need reserve the area above max_low_pfn
+	 */
+	unsigned long end = max_low_pfn * PAGE_SIZE;
 
-	memblock_x86_reserve_range(mpf->physptr, mpf->physptr+size, "* MP-table mpc");
+	if (mpf->physptr < end) {
+		if (mpf->physptr + size > end)
+			size = end - mpf->physptr;
+		reserve_bootmem_generic(mpf->physptr, size, BOOTMEM_DEFAULT);
+	}
+#else
+	reserve_bootmem_generic(mpf->physptr, size, BOOTMEM_DEFAULT);
+#endif
 }
 
-static int __init smp_scan_config(unsigned long base, unsigned long length)
+static int __init smp_scan_config(unsigned long base, unsigned long length,
+				  unsigned reserve)
 {
 	unsigned int *bp = phys_to_virt(base);
 	struct mpf_intel *mpf;
-	unsigned long mem;
 
 	apic_printk(APIC_VERBOSE, "Scan SMP from %p for %ld bytes.\n",
 			bp, length);
@@ -686,10 +717,12 @@ static int __init smp_scan_config(unsigned long base, unsigned long length)
 			printk(KERN_INFO "found SMP MP-table at [%p] %llx\n",
 			       mpf, (u64)virt_to_phys(mpf));
 
-			mem = virt_to_phys(mpf);
-			memblock_x86_reserve_range(mem, mem + sizeof(*mpf), "* MP-table mpf");
+			if (!reserve)
+				return 1;
+			reserve_bootmem_generic(virt_to_phys(mpf), sizeof(*mpf),
+						BOOTMEM_DEFAULT);
 			if (mpf->physptr)
-				smp_reserve_memory(mpf);
+				smp_reserve_bootmem(mpf);
 
 			return 1;
 		}
@@ -699,7 +732,7 @@ static int __init smp_scan_config(unsigned long base, unsigned long length)
 	return 0;
 }
 
-void __init default_find_smp_config(void)
+void __init default_find_smp_config(unsigned int reserve)
 {
 	unsigned int address;
 
@@ -711,9 +744,9 @@ void __init default_find_smp_config(void)
 	 * 2) Scan the top 1K of base RAM
 	 * 3) Scan the 64K of bios
 	 */
-	if (smp_scan_config(0x0, 0x400) ||
-	    smp_scan_config(639 * 0x400, 0x400) ||
-	    smp_scan_config(0xF0000, 0x10000))
+	if (smp_scan_config(0x0, 0x400, reserve) ||
+	    smp_scan_config(639 * 0x400, 0x400, reserve) ||
+	    smp_scan_config(0xF0000, 0x10000, reserve))
 		return;
 	/*
 	 * If it is an SMP machine we should know now, unless the
@@ -734,7 +767,7 @@ void __init default_find_smp_config(void)
 
 	address = get_bios_ebda();
 	if (address)
-		smp_scan_config(address, 0x400);
+		smp_scan_config(address, 0x400, reserve);
 }
 
 #ifdef CONFIG_X86_IO_APIC
@@ -932,6 +965,9 @@ void __init early_reserve_e820_mpc_new(void)
 {
 	if (enable_update_mptable && alloc_mptable) {
 		u64 startt = 0;
+#ifdef CONFIG_X86_TRAMPOLINE
+		startt = TRAMPOLINE_BASE;
+#endif
 		mpc_new_phys = early_reserve_e820(startt, mpc_new_length, 4);
 	}
 }

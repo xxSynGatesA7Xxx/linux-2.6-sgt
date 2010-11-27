@@ -27,8 +27,6 @@
 #include <linux/page-isolation.h>
 #include <linux/pfn.h>
 #include <linux/suspend.h>
-#include <linux/mm_inline.h>
-#include <linux/firmware-map.h>
 
 #include <asm/tlbflush.h>
 
@@ -73,9 +71,7 @@ static void get_page_bootmem(unsigned long info,  struct page *page, int type)
 	atomic_inc(&page->_count);
 }
 
-/* reference to __meminit __free_pages_bootmem is valid
- * so use __ref to tell modpost not to generate a warning */
-void __ref put_page_bootmem(struct page *page)
+void put_page_bootmem(struct page *page)
 {
 	int type;
 
@@ -415,14 +411,12 @@ int online_pages(unsigned long pfn, unsigned long nr_pages)
 	 * This means the page allocator ignores this zone.
 	 * So, zonelist must be updated after online.
 	 */
-	mutex_lock(&zonelists_mutex);
 	if (!populated_zone(zone))
 		need_zonelists_rebuild = 1;
 
 	ret = walk_system_ram_range(pfn, nr_pages, &onlined_pages,
 		online_pages_range);
 	if (ret) {
-		mutex_unlock(&zonelists_mutex);
 		printk(KERN_DEBUG "online_pages %lx at %lx failed\n",
 			nr_pages, pfn);
 		memory_notify(MEM_CANCEL_ONLINE, &arg);
@@ -431,12 +425,8 @@ int online_pages(unsigned long pfn, unsigned long nr_pages)
 
 	zone->present_pages += onlined_pages;
 	zone->zone_pgdat->node_present_pages += onlined_pages;
-	if (need_zonelists_rebuild)
-		build_all_zonelists(zone);
-	else
-		zone_pcp_update(zone);
 
-	mutex_unlock(&zonelists_mutex);
+	zone_pcp_update(zone);
 	setup_per_zone_wmarks();
 	calculate_zone_inactive_ratio(zone);
 	if (onlined_pages) {
@@ -444,7 +434,10 @@ int online_pages(unsigned long pfn, unsigned long nr_pages)
 		node_set_state(zone_to_nid(zone), N_HIGH_MEMORY);
 	}
 
-	vm_total_pages = nr_free_pagecache_pages();
+	if (need_zonelists_rebuild)
+		build_all_zonelists();
+	else
+		vm_total_pages = nr_free_pagecache_pages();
 
 	writeback_set_ratelimit();
 
@@ -484,29 +477,6 @@ static void rollback_node_hotadd(int nid, pg_data_t *pgdat)
 	return;
 }
 
-
-/*
- * called by cpu_up() to online a node without onlined memory.
- */
-int mem_online_node(int nid)
-{
-	pg_data_t	*pgdat;
-	int	ret;
-
-	lock_system_sleep();
-	pgdat = hotadd_new_pgdat(nid, 0);
-	if (pgdat) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	node_set_online(nid);
-	ret = register_one_node(nid);
-	BUG_ON(ret);
-
-out:
-	unlock_system_sleep();
-	return ret;
-}
 
 /* we are OK calling __meminit stuff here - we have CONFIG_MEMORY_HOTPLUG */
 int __ref add_memory(int nid, u64 start, u64 size)
@@ -550,9 +520,6 @@ int __ref add_memory(int nid, u64 start, u64 size)
 		BUG_ON(ret);
 	}
 
-	/* create new memmap entry */
-	firmware_map_add_hotplug(start, start + size, "System RAM");
-
 	goto out;
 
 error:
@@ -584,32 +551,45 @@ static inline int pageblock_free(struct page *page)
 /* Return the start of the next active pageblock after a given page */
 static struct page *next_active_pageblock(struct page *page)
 {
+	int pageblocks_stride;
+
 	/* Ensure the starting page is pageblock-aligned */
 	BUG_ON(page_to_pfn(page) & (pageblock_nr_pages - 1));
 
-	/* If the entire pageblock is free, move to the end of free page */
-	if (pageblock_free(page)) {
-		int order;
-		/* be careful. we don't have locks, page_order can be changed.*/
-		order = page_order(page);
-		if ((order < MAX_ORDER) && (order >= pageblock_order))
-			return page + (1 << order);
-	}
+	/* Move forward by at least 1 * pageblock_nr_pages */
+	pageblocks_stride = 1;
 
-	return page + pageblock_nr_pages;
+	/* If the entire pageblock is free, move to the end of free page */
+	if (pageblock_free(page))
+		pageblocks_stride += page_order(page) - pageblock_order;
+
+	return page + (pageblocks_stride * pageblock_nr_pages);
 }
 
 /* Checks if this range of memory is likely to be hot-removable. */
 int is_mem_section_removable(unsigned long start_pfn, unsigned long nr_pages)
 {
+	int type;
 	struct page *page = pfn_to_page(start_pfn);
 	struct page *end_page = page + nr_pages;
 
 	/* Check the starting page of each pageblock within the range */
 	for (; page < end_page; page = next_active_pageblock(page)) {
-		if (!is_pageblock_removable_nolock(page))
+		type = get_pageblock_migratetype(page);
+
+		/*
+		 * A pageblock containing MOVABLE or free pages is considered
+		 * removable
+		 */
+		if (type != MIGRATE_MOVABLE && !pageblock_free(page))
 			return 0;
-		cond_resched();
+
+		/*
+		 * A pageblock starting with a PageReserved page is not
+		 * considered removable.
+		 */
+		if (PageReserved(page))
+			return 0;
 	}
 
 	/* All pageblocks in the memory block are likely to be hot-removable */
@@ -646,7 +626,7 @@ static int test_pages_in_a_zone(unsigned long start_pfn, unsigned long end_pfn)
  * Scanning pfn is much easier than scanning lru list.
  * Scan pfn from start to end and Find LRU page.
  */
-static unsigned long scan_lru_pages(unsigned long start, unsigned long end)
+int scan_lru_pages(unsigned long start, unsigned long end)
 {
 	unsigned long pfn;
 	struct page *page;
@@ -692,34 +672,30 @@ do_migrate_range(unsigned long start_pfn, unsigned long end_pfn)
 		if (!ret) { /* Success */
 			list_add_tail(&page->lru, &source);
 			move_pages--;
-			inc_zone_page_state(page, NR_ISOLATED_ANON +
-					    page_is_file_cache(page));
-
 		} else {
-#ifdef CONFIG_DEBUG_VM
-			printk(KERN_ALERT "removing pfn %lx from LRU failed\n",
-			       pfn);
-			dump_page(page);
-#endif
 			/* Becasue we don't have big zone->lock. we should
 			   check this again here. */
-			if (page_count(page)) {
+			if (page_count(page))
 				not_managed++;
-				ret = -EBUSY;
-				break;
-			}
+#ifdef CONFIG_DEBUG_VM
+			printk(KERN_INFO "removing from LRU failed"
+					 " %lx/%d/%lx\n",
+				pfn, page_count(page), page->flags);
+#endif
 		}
 	}
-	if (!list_empty(&source)) {
-		if (not_managed) {
+	ret = -EBUSY;
+	if (not_managed) {
+		if (!list_empty(&source))
 			putback_lru_pages(&source);
-			goto out;
-		}
-		/* this function returns # of failed pages */
-		ret = migrate_pages(&source, hotremove_migrate_alloc, 0, 1);
-		if (ret)
-			putback_lru_pages(&source);
+		goto out;
 	}
+	ret = 0;
+	if (list_empty(&source))
+		goto out;
+	/* this function returns # of failed pages */
+	ret = migrate_pages(&source, hotremove_migrate_alloc, 0);
+
 out:
 	return ret;
 }
@@ -771,7 +747,7 @@ check_pages_isolated(unsigned long start_pfn, unsigned long end_pfn)
 	return offlined;
 }
 
-static int offline_pages(unsigned long start_pfn,
+int offline_pages(unsigned long start_pfn,
 		  unsigned long end_pfn, unsigned long timeout)
 {
 	unsigned long pfn, nr_pages, expire;
@@ -828,6 +804,7 @@ repeat:
 	ret = 0;
 	if (drain) {
 		lru_add_drain_all();
+		flush_scheduled_work();
 		cond_resched();
 		drain_all_pages();
 	}
@@ -849,6 +826,7 @@ repeat:
 	}
 	/* drain all zone's lru pagevec, this is asyncronous... */
 	lru_add_drain_all();
+	flush_scheduled_work();
 	yield();
 	/* drain pcp pages , this is synchrouns. */
 	drain_all_pages();
@@ -871,10 +849,6 @@ repeat:
 
 	setup_per_zone_wmarks();
 	calculate_zone_inactive_ratio(zone);
-	if (!node_present_pages(node)) {
-		node_clear_state(node, N_HIGH_MEMORY);
-		kswapd_stop(node);
-	}
 
 	vm_total_pages = nr_free_pagecache_pages();
 	writeback_set_ratelimit();

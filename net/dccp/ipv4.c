@@ -12,7 +12,6 @@
 
 #include <linux/dccp.h>
 #include <linux/icmp.h>
-#include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/random.h>
@@ -63,10 +62,10 @@ int dccp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 		nexthop = inet->opt->faddr;
 	}
 
-	tmp = ip_route_connect(&rt, nexthop, inet->inet_saddr,
+	tmp = ip_route_connect(&rt, nexthop, inet->saddr,
 			       RT_CONN_FLAGS(sk), sk->sk_bound_dev_if,
 			       IPPROTO_DCCP,
-			       inet->inet_sport, usin->sin_port, sk, 1);
+			       inet->sport, usin->sin_port, sk, 1);
 	if (tmp < 0)
 		return tmp;
 
@@ -78,12 +77,12 @@ int dccp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	if (inet->opt == NULL || !inet->opt->srr)
 		daddr = rt->rt_dst;
 
-	if (inet->inet_saddr == 0)
-		inet->inet_saddr = rt->rt_src;
-	inet->inet_rcv_saddr = inet->inet_saddr;
+	if (inet->saddr == 0)
+		inet->saddr = rt->rt_src;
+	inet->rcv_saddr = inet->saddr;
 
-	inet->inet_dport = usin->sin_port;
-	inet->inet_daddr = daddr;
+	inet->dport = usin->sin_port;
+	inet->daddr = daddr;
 
 	inet_csk(sk)->icsk_ext_hdr_len = 0;
 	if (inet->opt != NULL)
@@ -99,19 +98,17 @@ int dccp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	if (err != 0)
 		goto failure;
 
-	err = ip_route_newports(&rt, IPPROTO_DCCP, inet->inet_sport,
-				inet->inet_dport, sk);
+	err = ip_route_newports(&rt, IPPROTO_DCCP, inet->sport, inet->dport,
+				sk);
 	if (err != 0)
 		goto failure;
 
 	/* OK, now commit destination to socket.  */
-	sk_setup_caps(sk, &rt->dst);
+	sk_setup_caps(sk, &rt->u.dst);
 
-	dp->dccps_iss = secure_dccp_sequence_number(inet->inet_saddr,
-						    inet->inet_daddr,
-						    inet->inet_sport,
-						    inet->inet_dport);
-	inet->inet_id = dp->dccps_iss ^ jiffies;
+	dp->dccps_iss = secure_dccp_sequence_number(inet->saddr, inet->daddr,
+						    inet->sport, inet->dport);
+	inet->id = dp->dccps_iss ^ jiffies;
 
 	err = dccp_connect(sk);
 	rt = NULL;
@@ -126,7 +123,7 @@ failure:
 	dccp_set_state(sk, DCCP_CLOSED);
 	ip_rt_put(rt);
 	sk->sk_route_caps = 0;
-	inet->inet_dport = 0;
+	inet->dport = 0;
 	goto out;
 }
 
@@ -349,15 +346,13 @@ static inline __sum16 dccp_v4_csum_finish(struct sk_buff *skb,
 	return csum_tcpudp_magic(src, dst, skb->len, IPPROTO_DCCP, skb->csum);
 }
 
-void dccp_v4_send_check(struct sock *sk, struct sk_buff *skb)
+void dccp_v4_send_check(struct sock *sk, int unused, struct sk_buff *skb)
 {
 	const struct inet_sock *inet = inet_sk(sk);
 	struct dccp_hdr *dh = dccp_hdr(skb);
 
 	dccp_csum_outgoing(skb);
-	dh->dccph_checksum = dccp_v4_csum_finish(skb,
-						 inet->inet_saddr,
-						 inet->inet_daddr);
+	dh->dccph_checksum = dccp_v4_csum_finish(skb, inet->saddr, inet->daddr);
 }
 
 EXPORT_SYMBOL_GPL(dccp_v4_send_check);
@@ -392,37 +387,33 @@ struct sock *dccp_v4_request_recv_sock(struct sock *sk, struct sk_buff *skb,
 
 	newsk = dccp_create_openreq_child(sk, req, skb);
 	if (newsk == NULL)
-		goto exit_nonewsk;
+		goto exit;
 
 	sk_setup_caps(newsk, dst);
 
 	newinet		   = inet_sk(newsk);
 	ireq		   = inet_rsk(req);
-	newinet->inet_daddr	= ireq->rmt_addr;
-	newinet->inet_rcv_saddr = ireq->loc_addr;
-	newinet->inet_saddr	= ireq->loc_addr;
+	newinet->daddr	   = ireq->rmt_addr;
+	newinet->rcv_saddr = ireq->loc_addr;
+	newinet->saddr	   = ireq->loc_addr;
 	newinet->opt	   = ireq->opt;
 	ireq->opt	   = NULL;
 	newinet->mc_index  = inet_iif(skb);
 	newinet->mc_ttl	   = ip_hdr(skb)->ttl;
-	newinet->inet_id   = jiffies;
+	newinet->id	   = jiffies;
 
 	dccp_sync_mss(newsk, dst_mtu(dst));
 
-	if (__inet_inherit_port(sk, newsk) < 0) {
-		sock_put(newsk);
-		goto exit;
-	}
-	__inet_hash_nolisten(newsk, NULL);
+	__inet_hash_nolisten(newsk);
+	__inet_inherit_port(sk, newsk);
 
 	return newsk;
 
 exit_overflow:
 	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_LISTENOVERFLOWS);
-exit_nonewsk:
-	dst_release(dst);
 exit:
 	NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_LISTENDROPS);
+	dst_release(dst);
 	return NULL;
 }
 
@@ -479,11 +470,10 @@ static struct dst_entry* dccp_v4_route_skb(struct net *net, struct sock *sk,
 		return NULL;
 	}
 
-	return &rt->dst;
+	return &rt->u.dst;
 }
 
-static int dccp_v4_send_response(struct sock *sk, struct request_sock *req,
-				 struct request_values *rv_unused)
+static int dccp_v4_send_response(struct sock *sk, struct request_sock *req)
 {
 	int err = -1;
 	struct sk_buff *skb;
@@ -632,7 +622,7 @@ int dccp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	dreq->dreq_iss	   = dccp_v4_init_sequence(skb);
 	dreq->dreq_service = service;
 
-	if (dccp_v4_send_response(sk, req, NULL))
+	if (dccp_v4_send_response(sk, req))
 		goto drop_and_free;
 
 	inet_csk_reqsk_queue_hash_add(sk, req, DCCP_TIMEOUT_INIT);
@@ -997,20 +987,21 @@ static struct inet_protosw dccp_v4_protosw = {
 	.protocol	= IPPROTO_DCCP,
 	.prot		= &dccp_v4_prot,
 	.ops		= &inet_dccp_ops,
+	.capability	= -1,
 	.no_check	= 0,
 	.flags		= INET_PROTOSW_ICSK,
 };
 
-static int __net_init dccp_v4_init_net(struct net *net)
+static int dccp_v4_init_net(struct net *net)
 {
-	if (dccp_hashinfo.bhash == NULL)
-		return -ESOCKTNOSUPPORT;
+	int err;
 
-	return inet_ctl_sock_create(&net->dccp.v4_ctl_sk, PF_INET,
-				    SOCK_DCCP, IPPROTO_DCCP, net);
+	err = inet_ctl_sock_create(&net->dccp.v4_ctl_sk, PF_INET,
+				   SOCK_DCCP, IPPROTO_DCCP, net);
+	return err;
 }
 
-static void __net_exit dccp_v4_exit_net(struct net *net)
+static void dccp_v4_exit_net(struct net *net)
 {
 	inet_ctl_sock_destroy(net->dccp.v4_ctl_sk);
 }

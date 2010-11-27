@@ -4,12 +4,10 @@
 
 #include <linux/module.h>
 #include <linux/init.h>
-#include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/acpi.h>
 #include <linux/signal.h>
 #include <linux/kthread.h>
-#include <linux/dmi.h>
 
 #include <acpi/acpi_drivers.h>
 
@@ -25,8 +23,6 @@ extern struct acpi_device *acpi_root;
 #define ACPI_BUS_DEVICE_NAME		"System Bus"
 
 #define ACPI_IS_ROOT_DEVICE(device)    (!(device)->parent)
-
-static const char *dummy_hid = "device";
 
 static LIST_HEAD(acpi_device_list);
 static LIST_HEAD(acpi_bus_id_list);
@@ -50,9 +46,6 @@ static int create_modalias(struct acpi_device *acpi_dev, char *modalias,
 	int len;
 	int count;
 	struct acpi_hardware_id *id;
-
-	if (list_empty(&acpi_dev->pnp.ids))
-		return 0;
 
 	len = snprintf(modalias, size, "acpi:");
 	size -= len;
@@ -207,15 +200,13 @@ static int acpi_device_setup_files(struct acpi_device *dev)
 			goto end;
 	}
 
-	if (!list_empty(&dev->pnp.ids)) {
-		result = device_create_file(&dev->dev, &dev_attr_hid);
-		if (result)
-			goto end;
+	result = device_create_file(&dev->dev, &dev_attr_hid);
+	if (result)
+		goto end;
 
-		result = device_create_file(&dev->dev, &dev_attr_modalias);
-		if (result)
-			goto end;
-	}
+	result = device_create_file(&dev->dev, &dev_attr_modalias);
+	if (result)
+		goto end;
 
         /*
          * If device has _EJ0, 'eject' file is created that is used to trigger
@@ -322,9 +313,6 @@ static int acpi_device_uevent(struct device *dev, struct kobj_uevent_env *env)
 {
 	struct acpi_device *acpi_dev = to_acpi_device(dev);
 	int len;
-
-	if (list_empty(&acpi_dev->pnp.ids))
-		return 0;
 
 	if (add_uevent_var(env, "MODALIAS="))
 		return -ENOMEM;
@@ -750,38 +738,7 @@ acpi_bus_extract_wakeup_device_power_package(struct acpi_device *device,
 		device->wakeup.resources.handles[i] = element->reference.handle;
 	}
 
-	acpi_gpe_can_wake(device->wakeup.gpe_device, device->wakeup.gpe_number);
-
 	return AE_OK;
-}
-
-static void acpi_bus_set_run_wake_flags(struct acpi_device *device)
-{
-	struct acpi_device_id button_device_ids[] = {
-		{"PNP0C0D", 0},
-		{"PNP0C0C", 0},
-		{"PNP0C0E", 0},
-		{"", 0},
-	};
-	acpi_status status;
-	acpi_event_status event_status;
-
-	device->wakeup.run_wake_count = 0;
-	device->wakeup.flags.notifier_present = 0;
-
-	/* Power button, Lid switch always enable wakeup */
-	if (!acpi_match_device_ids(device, button_device_ids)) {
-		device->wakeup.flags.run_wake = 1;
-		device->wakeup.flags.always_enabled = 1;
-		return;
-	}
-
-	status = acpi_get_gpe_status(device->wakeup.gpe_device,
-					device->wakeup.gpe_number,
-						&event_status);
-	if (status == AE_OK)
-		device->wakeup.flags.run_wake =
-				!!(event_status & ACPI_EVENT_FLAG_HANDLE);
 }
 
 static int acpi_bus_get_wakeup_device_flags(struct acpi_device *device)
@@ -790,6 +747,13 @@ static int acpi_bus_get_wakeup_device_flags(struct acpi_device *device)
 	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
 	union acpi_object *package = NULL;
 	int psw_error;
+
+	struct acpi_device_id button_device_ids[] = {
+		{"PNP0C0D", 0},
+		{"PNP0C0C", 0},
+		{"PNP0C0E", 0},
+		{"", 0},
+	};
 
 	/* _PRW */
 	status = acpi_evaluate_object(device->handle, "_PRW", NULL, &buffer);
@@ -809,7 +773,6 @@ static int acpi_bus_get_wakeup_device_flags(struct acpi_device *device)
 
 	device->wakeup.flags.valid = 1;
 	device->wakeup.prepare_count = 0;
-	acpi_bus_set_run_wake_flags(device);
 	/* Call _PSW/_DSW object to disable its ability to wake the sleeping
 	 * system for the ACPI device with the _PRW object.
 	 * The _PSW object is depreciated in ACPI 3.0 and is replaced by _DSW.
@@ -820,6 +783,10 @@ static int acpi_bus_get_wakeup_device_flags(struct acpi_device *device)
 	if (psw_error)
 		ACPI_DEBUG_PRINT((ACPI_DB_INFO,
 				"error in _DSW or _PSW evaluation\n"));
+
+	/* Power button, Lid switch always enable wakeup */
+	if (!acpi_match_device_ids(device, button_device_ids))
+		device->wakeup.flags.run_wake = 1;
 
 end:
 	if (ACPI_FAILURE(status))
@@ -1020,12 +987,9 @@ static int acpi_dock_match(struct acpi_device *device)
 	return acpi_get_handle(device->handle, "_DCK", &tmp);
 }
 
-const char *acpi_device_hid(struct acpi_device *device)
+char *acpi_device_hid(struct acpi_device *device)
 {
 	struct acpi_hardware_id *hid;
-
-	if (list_empty(&device->pnp.ids))
-		return dummy_hid;
 
 	hid = list_first_entry(&device->pnp.ids, struct acpi_hardware_id, list);
 	return hid->id;
@@ -1050,41 +1014,6 @@ static void acpi_add_id(struct acpi_device *device, const char *dev_id)
 	list_add_tail(&id->list, &device->pnp.ids);
 }
 
-/*
- * Old IBM workstations have a DSDT bug wherein the SMBus object
- * lacks the SMBUS01 HID and the methods do not have the necessary "_"
- * prefix.  Work around this.
- */
-static int acpi_ibm_smbus_match(struct acpi_device *device)
-{
-	acpi_handle h_dummy;
-	struct acpi_buffer path = {ACPI_ALLOCATE_BUFFER, NULL};
-	int result;
-
-	if (!dmi_name_in_vendors("IBM"))
-		return -ENODEV;
-
-	/* Look for SMBS object */
-	result = acpi_get_name(device->handle, ACPI_SINGLE_NAME, &path);
-	if (result)
-		return result;
-
-	if (strcmp("SMBS", path.pointer)) {
-		result = -ENODEV;
-		goto out;
-	}
-
-	/* Does it have the necessary (but misnamed) methods? */
-	result = -ENODEV;
-	if (ACPI_SUCCESS(acpi_get_handle(device->handle, "SBI", &h_dummy)) &&
-	    ACPI_SUCCESS(acpi_get_handle(device->handle, "SBR", &h_dummy)) &&
-	    ACPI_SUCCESS(acpi_get_handle(device->handle, "SBW", &h_dummy)))
-		result = 0;
-out:
-	kfree(path.pointer);
-	return result;
-}
-
 static void acpi_device_set_id(struct acpi_device *device)
 {
 	acpi_status status;
@@ -1096,6 +1025,12 @@ static void acpi_device_set_id(struct acpi_device *device)
 	case ACPI_BUS_TYPE_DEVICE:
 		if (ACPI_IS_ROOT_DEVICE(device)) {
 			acpi_add_id(device, ACPI_SYSTEM_HID);
+			break;
+		} else if (ACPI_IS_ROOT_DEVICE(device->parent)) {
+			/* \_SB_, the only root-level namespace device */
+			acpi_add_id(device, ACPI_BUS_HID);
+			strcpy(device->pnp.device_name, ACPI_BUS_DEVICE_NAME);
+			strcpy(device->pnp.device_class, ACPI_BUS_CLASS);
 			break;
 		}
 
@@ -1129,14 +1064,6 @@ static void acpi_device_set_id(struct acpi_device *device)
 			acpi_add_id(device, ACPI_BAY_HID);
 		else if (ACPI_SUCCESS(acpi_dock_match(device)))
 			acpi_add_id(device, ACPI_DOCK_HID);
-		else if (!acpi_ibm_smbus_match(device))
-			acpi_add_id(device, ACPI_SMBUS_IBM_HID);
-		else if (!acpi_device_hid(device) &&
-			 ACPI_IS_ROOT_DEVICE(device->parent)) {
-			acpi_add_id(device, ACPI_BUS_HID); /* \_SB, LNXSYBUS */
-			strcpy(device->pnp.device_name, ACPI_BUS_DEVICE_NAME);
-			strcpy(device->pnp.device_class, ACPI_BUS_CLASS);
-		}
 
 		break;
 	case ACPI_BUS_TYPE_POWER:
@@ -1155,6 +1082,16 @@ static void acpi_device_set_id(struct acpi_device *device)
 		acpi_add_id(device, ACPI_BUTTON_HID_SLEEPF);
 		break;
 	}
+
+	/*
+	 * We build acpi_devices for some objects that don't have _HID or _CID,
+	 * e.g., PCI bridges and slots.  Drivers can't bind to these objects,
+	 * but we do use them indirectly by traversing the acpi_device tree.
+	 * This generic ID isn't useful for driver binding, but it provides
+	 * the useful property that "every acpi_device has an ID."
+	 */
+	if (list_empty(&device->pnp.ids))
+		acpi_add_id(device, "device");
 }
 
 static int acpi_device_set_context(struct acpi_device *device)
@@ -1395,28 +1332,12 @@ static int acpi_bus_scan(acpi_handle handle, struct acpi_bus_ops *ops,
 	status = acpi_bus_check_add(handle, 0, ops, &device);
 	if (ACPI_SUCCESS(status))
 		acpi_walk_namespace(ACPI_TYPE_ANY, handle, ACPI_UINT32_MAX,
-				    acpi_bus_check_add, NULL, ops, &device);
+				    acpi_bus_check_add, ops, &device);
 
 	if (child)
 		*child = device;
-
-	if (device)
-		return 0;
-	else
-		return -ENODEV;
+	return 0;
 }
-
-/*
- * acpi_bus_add and acpi_bus_start
- *
- * scan a given ACPI tree and (probably recently hot-plugged)
- * create and add or starts found devices.
- *
- * If no devices were found -ENODEV is returned which does not
- * mean that this is a real error, there just have been no suitable
- * ACPI objects in the table trunk from which the kernel could create
- * a device and add/start an appropriate driver.
- */
 
 int
 acpi_bus_add(struct acpi_device **child,
@@ -1427,14 +1348,14 @@ acpi_bus_add(struct acpi_device **child,
 	memset(&ops, 0, sizeof(ops));
 	ops.acpi_op_add = 1;
 
-	return acpi_bus_scan(handle, &ops, child);
+	acpi_bus_scan(handle, &ops, child);
+	return 0;
 }
 EXPORT_SYMBOL(acpi_bus_add);
 
 int acpi_bus_start(struct acpi_device *device)
 {
 	struct acpi_bus_ops ops;
-	int result;
 
 	if (!device)
 		return -EINVAL;
@@ -1442,11 +1363,8 @@ int acpi_bus_start(struct acpi_device *device)
 	memset(&ops, 0, sizeof(ops));
 	ops.acpi_op_start = 1;
 
-	result = acpi_bus_scan(device->handle, &ops, NULL);
-
-	acpi_update_gpes();
-
-	return result;
+	acpi_bus_scan(device->handle, &ops, NULL);
+	return 0;
 }
 EXPORT_SYMBOL(acpi_bus_start);
 
@@ -1560,8 +1478,6 @@ int __init acpi_scan_init(void)
 
 	if (result)
 		acpi_device_unregister(acpi_root, ACPI_BUS_REMOVAL_NORMAL);
-	else
-		acpi_update_gpes();
 
 	return result;
 }

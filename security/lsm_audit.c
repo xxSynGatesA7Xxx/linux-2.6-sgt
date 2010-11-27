@@ -14,7 +14,6 @@
 #include <linux/types.h>
 #include <linux/stddef.h>
 #include <linux/kernel.h>
-#include <linux/gfp.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <net/sock.h>
@@ -221,7 +220,7 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 	}
 
 	switch (a->type) {
-	case LSM_AUDIT_DATA_NONE:
+	case LSM_AUDIT_NO_AUDIT:
 		return;
 	case LSM_AUDIT_DATA_IPC:
 		audit_log_format(ab, " key=%d ", a->u.ipc_id);
@@ -274,11 +273,11 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 			case AF_INET: {
 				struct inet_sock *inet = inet_sk(sk);
 
-				print_ipv4_addr(ab, inet->inet_rcv_saddr,
-						inet->inet_sport,
+				print_ipv4_addr(ab, inet->rcv_saddr,
+						inet->sport,
 						"laddr", "lport");
-				print_ipv4_addr(ab, inet->inet_daddr,
-						inet->inet_dport,
+				print_ipv4_addr(ab, inet->daddr,
+						inet->dport,
 						"faddr", "fport");
 				break;
 			}
@@ -287,10 +286,10 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 				struct ipv6_pinfo *inet6 = inet6_sk(sk);
 
 				print_ipv6_addr(ab, &inet6->rcv_saddr,
-						inet->inet_sport,
+						inet->sport,
 						"laddr", "lport");
 				print_ipv6_addr(ab, &inet6->daddr,
-						inet->inet_dport,
+						inet->dport,
 						"faddr", "fport");
 				break;
 			}
@@ -355,10 +354,6 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 		}
 		break;
 #endif
-	case LSM_AUDIT_DATA_KMOD:
-		audit_log_format(ab, " kmod=");
-		audit_log_untrustedstring(ab, a->u.kmod_name);
-		break;
 	} /* switch (a->type) */
 }
 

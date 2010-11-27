@@ -17,7 +17,6 @@
 #include <linux/init.h>
 #include <linux/crc32.h>
 #include <linux/ioport.h>
-#include <linux/slab.h>
 
 #include <plat/pm.h>
 

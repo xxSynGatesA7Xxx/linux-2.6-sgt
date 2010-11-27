@@ -1,6 +1,9 @@
 /* Typhoon Radio Card driver for radio support
  * (c) 1999 Dr. Henrik Seidel <Henrik.Seidel@gmx.de>
  *
+ * Card manufacturer:
+ * http://194.18.155.92/idc/prod2.idc?nr=50753&lang=e
+ *
  * Notes on the hardware
  *
  * This card has two output sockets, one for speakers and one for line.
@@ -204,8 +207,6 @@ static int vidioc_g_frequency(struct file *file, void *priv,
 {
 	struct typhoon *dev = video_drvdata(file);
 
-	if (f->tuner != 0)
-		return -EINVAL;
 	f->type = V4L2_TUNER_RADIO;
 	f->frequency = dev->curfreq;
 	return 0;
@@ -216,8 +217,6 @@ static int vidioc_s_frequency(struct file *file, void *priv,
 {
 	struct typhoon *dev = video_drvdata(file);
 
-	if (f->tuner != 0 || f->type != V4L2_TUNER_RADIO)
-		return -EINVAL;
 	dev->curfreq = f->frequency;
 	typhoon_setfreq(dev, dev->curfreq);
 	return 0;

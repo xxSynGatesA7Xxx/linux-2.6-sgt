@@ -33,6 +33,7 @@
 #include <linux/ctype.h>  /* isdigit, isxdigit */
 #include <linux/errno.h>
 #include <linux/init.h>
+#include <linux/slab.h>
 #include <linux/blkdev.h>
 #include <linux/blkpg.h>
 #include <linux/hdreg.h>  /* HDIO_GETGEO */
@@ -40,7 +41,6 @@
 #include <linux/bio.h>
 #include <linux/suspend.h>
 #include <linux/platform_device.h>
-#include <linux/gfp.h>
 #include <asm/uaccess.h>
 
 #define XPRAM_NAME	"xpram"
@@ -407,7 +407,7 @@ static int xpram_restore(struct device *dev)
 	return 0;
 }
 
-static const struct dev_pm_ops xpram_pm_ops = {
+static struct dev_pm_ops xpram_pm_ops = {
 	.restore	= xpram_restore,
 };
 

@@ -40,7 +40,6 @@
 #include <linux/init.h>
 #include <linux/ioport.h>
 #include <linux/wait.h>
-#include <linux/slab.h>
 
 #include <asm/system.h>
 #include <asm/io.h>
@@ -1645,8 +1644,10 @@ static int hrz_send (struct atm_vcc * atm_vcc, struct sk_buff * skb) {
     unsigned short d = 0;
     char * s = skb->data;
     if (*s++ == 'D') {
-	for (i = 0; i < 4; ++i)
-		d = (d << 4) | hex_to_bin(*s++);
+      for (i = 0; i < 4; ++i) {
+	d = (d<<4) | ((*s <= '9') ? (*s - '0') : (*s - 'a' + 10));
+	++s;
+      }
       PRINTK (KERN_INFO, "debug bitmap is now %hx", debug = d);
     }
   }

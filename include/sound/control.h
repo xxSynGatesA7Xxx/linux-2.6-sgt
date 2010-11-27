@@ -56,6 +56,7 @@ struct snd_kcontrol_new {
 
 struct snd_kcontrol_volatile {
 	struct snd_ctl_file *owner;	/* locked */
+	pid_t owner_pid;
 	unsigned int access;	/* access rights */
 };
 
@@ -86,12 +87,10 @@ struct snd_kctl_event {
 
 #define snd_kctl_event(n) list_entry(n, struct snd_kctl_event, list)
 
-struct pid;
-
 struct snd_ctl_file {
 	struct list_head list;		/* list of all control files */
 	struct snd_card *card;
-	struct pid *pid;
+	pid_t pid;
 	int prefer_pcm_subdevice;
 	int prefer_rawmidi_subdevice;
 	wait_queue_head_t change_sleep;

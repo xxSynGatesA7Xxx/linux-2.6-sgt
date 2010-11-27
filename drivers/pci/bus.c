@@ -14,126 +14,8 @@
 #include <linux/ioport.h>
 #include <linux/proc_fs.h>
 #include <linux/init.h>
-#include <linux/slab.h>
 
 #include "pci.h"
-
-void pci_bus_add_resource(struct pci_bus *bus, struct resource *res,
-			  unsigned int flags)
-{
-	struct pci_bus_resource *bus_res;
-
-	bus_res = kzalloc(sizeof(struct pci_bus_resource), GFP_KERNEL);
-	if (!bus_res) {
-		dev_err(&bus->dev, "can't add %pR resource\n", res);
-		return;
-	}
-
-	bus_res->res = res;
-	bus_res->flags = flags;
-	list_add_tail(&bus_res->list, &bus->resources);
-}
-
-struct resource *pci_bus_resource_n(const struct pci_bus *bus, int n)
-{
-	struct pci_bus_resource *bus_res;
-
-	if (n < PCI_BRIDGE_RESOURCE_NUM)
-		return bus->resource[n];
-
-	n -= PCI_BRIDGE_RESOURCE_NUM;
-	list_for_each_entry(bus_res, &bus->resources, list) {
-		if (n-- == 0)
-			return bus_res->res;
-	}
-	return NULL;
-}
-EXPORT_SYMBOL_GPL(pci_bus_resource_n);
-
-void pci_bus_remove_resources(struct pci_bus *bus)
-{
-	struct pci_bus_resource *bus_res, *tmp;
-	int i;
-
-	for (i = 0; i < PCI_BRIDGE_RESOURCE_NUM; i++)
-		bus->resource[i] = NULL;
-
-	list_for_each_entry_safe(bus_res, tmp, &bus->resources, list) {
-		list_del(&bus_res->list);
-		kfree(bus_res);
-	}
-}
-
-static bool pci_bus_resource_better(struct resource *res1, bool pos1,
-				    struct resource *res2, bool pos2)
-{
-	/* If exactly one is positive decode, always prefer that one */
-	if (pos1 != pos2)
-		return pos1 ? true : false;
-
-	/* Prefer the one that contains the highest address */
-	if (res1->end != res2->end)
-		return (res1->end > res2->end) ? true : false;
-
-	/* Otherwise, prefer the one with highest "center of gravity" */
-	if (res1->start != res2->start)
-		return (res1->start > res2->start) ? true : false;
-
-	/* Otherwise, choose one arbitrarily (but consistently) */
-	return (res1 > res2) ? true : false;
-}
-
-static bool pci_bus_resource_positive(struct pci_bus *bus, struct resource *res)
-{
-	struct pci_bus_resource *bus_res;
-
-	/*
-	 * This relies on the fact that pci_bus.resource[] refers to P2P or
-	 * CardBus bridge base/limit registers, which are always positively
-	 * decoded.  The pci_bus.resources list contains host bridge or
-	 * subtractively decoded resources.
-	 */
-	list_for_each_entry(bus_res, &bus->resources, list) {
-		if (bus_res->res == res)
-			return (bus_res->flags & PCI_SUBTRACTIVE_DECODE) ?
-				false : true;
-	}
-	return true;
-}
-
-/*
- * Find the next-best bus resource after the cursor "res".  If the cursor is
- * NULL, return the best resource.  "Best" means that we prefer positive
- * decode regions over subtractive decode, then those at higher addresses.
- */
-static struct resource *pci_bus_find_resource_prev(struct pci_bus *bus,
-						   unsigned int type,
-						   struct resource *res)
-{
-	bool res_pos, r_pos, prev_pos = false;
-	struct resource *r, *prev = NULL;
-	int i;
-
-	res_pos = pci_bus_resource_positive(bus, res);
-	pci_bus_for_each_resource(bus, r, i) {
-		if (!r)
-			continue;
-
-		if ((r->flags & IORESOURCE_TYPE_BITS) != type)
-			continue;
-
-		r_pos = pci_bus_resource_positive(bus, r);
-		if (!res || pci_bus_resource_better(res, res_pos, r, r_pos)) {
-			if (!prev || pci_bus_resource_better(r, r_pos,
-							     prev, prev_pos)) {
-				prev = r;
-				prev_pos = r_pos;
-			}
-		}
-	}
-
-	return prev;
-}
 
 /**
  * pci_bus_alloc_resource - allocate a resource from a parent bus
@@ -154,16 +36,12 @@ int
 pci_bus_alloc_resource(struct pci_bus *bus, struct resource *res,
 		resource_size_t size, resource_size_t align,
 		resource_size_t min, unsigned int type_mask,
-		resource_size_t (*alignf)(void *,
-					  const struct resource *,
-					  resource_size_t,
-					  resource_size_t),
+		void (*alignf)(void *, struct resource *, resource_size_t,
+				resource_size_t),
 		void *alignf_data)
 {
-	int ret = -ENOMEM;
-	struct resource *r;
+	int i, ret = -ENOMEM;
 	resource_size_t max = -1;
-	unsigned int type = res->flags & IORESOURCE_TYPE_BITS;
 
 	type_mask |= IORESOURCE_IO | IORESOURCE_MEM;
 
@@ -171,9 +49,11 @@ pci_bus_alloc_resource(struct pci_bus *bus, struct resource *res,
 	if (!(res->flags & IORESOURCE_MEM_64))
 		max = PCIBIOS_MAX_MEM_32;
 
-	/* Look for space at highest addresses first */
-	r = pci_bus_find_resource_prev(bus, type, NULL);
-	for ( ; r; r = pci_bus_find_resource_prev(bus, type, r)) {
+	for (i = 0; i < PCI_BUS_NUM_RESOURCES; i++) {
+		struct resource *r = bus->resource[i];
+		if (!r)
+			continue;
+
 		/* type_mask must match */
 		if ((res->flags ^ r->flags) & type_mask)
 			continue;
@@ -311,8 +191,6 @@ void pci_enable_bridges(struct pci_bus *bus)
 		if (dev->subordinate) {
 			if (!pci_is_enabled(dev)) {
 				retval = pci_enable_device(dev);
-				if (retval)
-					dev_err(&dev->dev, "Error enabling bridge (%d), continuing\n", retval);
 				pci_set_master(dev);
 			}
 			pci_enable_bridges(dev->subordinate);
@@ -362,15 +240,14 @@ void pci_walk_bus(struct pci_bus *top, int (*cb)(struct pci_dev *, void *),
 			next = dev->bus_list.next;
 
 		/* Run device routines with the device locked */
-		device_lock(&dev->dev);
+		down(&dev->dev.sem);
 		retval = cb(dev, userdata);
-		device_unlock(&dev->dev);
+		up(&dev->dev.sem);
 		if (retval)
 			break;
 	}
 	up_read(&pci_bus_sem);
 }
-EXPORT_SYMBOL_GPL(pci_walk_bus);
 
 EXPORT_SYMBOL(pci_bus_alloc_resource);
 EXPORT_SYMBOL_GPL(pci_bus_add_device);

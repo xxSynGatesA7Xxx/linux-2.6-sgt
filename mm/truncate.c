@@ -9,7 +9,6 @@
 
 #include <linux/kernel.h>
 #include <linux/backing-dev.h>
-#include <linux/gfp.h>
 #include <linux/mm.h>
 #include <linux/swap.h>
 #include <linux/module.h>
@@ -273,7 +272,6 @@ void truncate_inode_pages_range(struct address_space *mapping,
 			pagevec_release(&pvec);
 			break;
 		}
-		mem_cgroup_uncharge_start();
 		for (i = 0; i < pagevec_count(&pvec); i++) {
 			struct page *page = pvec.pages[i];
 
@@ -288,7 +286,6 @@ void truncate_inode_pages_range(struct address_space *mapping,
 			unlock_page(page);
 		}
 		pagevec_release(&pvec);
-		mem_cgroup_uncharge_end();
 	}
 }
 EXPORT_SYMBOL(truncate_inode_pages_range);
@@ -330,7 +327,6 @@ unsigned long invalidate_mapping_pages(struct address_space *mapping,
 	pagevec_init(&pvec, 0);
 	while (next <= end &&
 			pagevec_lookup(&pvec, mapping, next, PAGEVEC_SIZE)) {
-		mem_cgroup_uncharge_start();
 		for (i = 0; i < pagevec_count(&pvec); i++) {
 			struct page *page = pvec.pages[i];
 			pgoff_t index;
@@ -358,7 +354,6 @@ unsigned long invalidate_mapping_pages(struct address_space *mapping,
 				break;
 		}
 		pagevec_release(&pvec);
-		mem_cgroup_uncharge_end();
 		cond_resched();
 	}
 	return ret;
@@ -433,7 +428,6 @@ int invalidate_inode_pages2_range(struct address_space *mapping,
 	while (next <= end && !wrapped &&
 		pagevec_lookup(&pvec, mapping, next,
 			min(end - next, (pgoff_t)PAGEVEC_SIZE - 1) + 1)) {
-		mem_cgroup_uncharge_start();
 		for (i = 0; i < pagevec_count(&pvec); i++) {
 			struct page *page = pvec.pages[i];
 			pgoff_t page_index;
@@ -483,7 +477,6 @@ int invalidate_inode_pages2_range(struct address_space *mapping,
 			unlock_page(page);
 		}
 		pagevec_release(&pvec);
-		mem_cgroup_uncharge_end();
 		cond_resched();
 	}
 	return ret;
@@ -497,7 +490,7 @@ EXPORT_SYMBOL_GPL(invalidate_inode_pages2_range);
  * Any pages which are found to be mapped into pagetables are unmapped prior to
  * invalidation.
  *
- * Returns -EBUSY if any pages could not be invalidated.
+ * Returns -EIO if any pages could not be invalidated.
  */
 int invalidate_inode_pages2(struct address_space *mapping)
 {
@@ -541,48 +534,28 @@ void truncate_pagecache(struct inode *inode, loff_t old, loff_t new)
 EXPORT_SYMBOL(truncate_pagecache);
 
 /**
- * truncate_setsize - update inode and pagecache for a new file size
- * @inode: inode
- * @newsize: new file size
- *
- * truncate_setsize updastes i_size update and performs pagecache
- * truncation (if necessary) for a file size updates. It will be
- * typically be called from the filesystem's setattr function when
- * ATTR_SIZE is passed in.
- *
- * Must be called with inode_mutex held and after all filesystem
- * specific block truncation has been performed.
- */
-void truncate_setsize(struct inode *inode, loff_t newsize)
-{
-	loff_t oldsize;
-
-	oldsize = inode->i_size;
-	i_size_write(inode, newsize);
-
-	truncate_pagecache(inode, oldsize, newsize);
-}
-EXPORT_SYMBOL(truncate_setsize);
-
-/**
  * vmtruncate - unmap mappings "freed" by truncate() syscall
  * @inode: inode of the file used
  * @offset: file offset to start truncating
  *
- * This function is deprecated and truncate_setsize or truncate_pagecache
- * should be used instead, together with filesystem specific block truncation.
+ * NOTE! We have to be ready to update the memory sharing
+ * between the file and the memory map for a potential last
+ * incomplete page.  Ugly, but necessary.
  */
 int vmtruncate(struct inode *inode, loff_t offset)
 {
+	loff_t oldsize;
 	int error;
 
 	error = inode_newsize_ok(inode, offset);
 	if (error)
 		return error;
-
-	truncate_setsize(inode, offset);
+	oldsize = inode->i_size;
+	i_size_write(inode, offset);
+	truncate_pagecache(inode, oldsize, offset);
 	if (inode->i_op->truncate)
 		inode->i_op->truncate(inode);
-	return 0;
+
+	return error;
 }
 EXPORT_SYMBOL(vmtruncate);

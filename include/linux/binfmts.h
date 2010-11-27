@@ -50,8 +50,8 @@ struct linux_binprm{
 	int unsafe;		/* how unsafe this exec is (mask of LSM_UNSAFE_*) */
 	unsigned int per_clear;	/* bits to clear in current->personality */
 	int argc, envc;
-	const char * filename;	/* Name of binary as seen by procps */
-	const char * interp;	/* Name of the binary really executed. Most
+	char * filename;	/* Name of binary as seen by procps */
+	char * interp;		/* Name of the binary really executed. Most
 				   of the time same as filename, but could be
 				   different for binfmt_{misc,script} */
 	unsigned interp_flags;
@@ -68,15 +68,6 @@ struct linux_binprm{
 
 #define BINPRM_MAX_RECURSION 4
 
-/* Function parameter for binfmt->coredump */
-struct coredump_params {
-	long signr;
-	struct pt_regs *regs;
-	struct file *file;
-	unsigned long limit;
-	unsigned long mm_flags;
-};
-
 /*
  * This structure defines the functions that are used to load the binary formats that
  * linux accepts.
@@ -86,7 +77,7 @@ struct linux_binfmt {
 	struct module *module;
 	int (*load_binary)(struct linux_binprm *, struct  pt_regs * regs);
 	int (*load_shlib)(struct file *);
-	int (*core_dump)(struct coredump_params *cprm);
+	int (*core_dump)(long signr, struct pt_regs *regs, struct file *file, unsigned long limit);
 	unsigned long min_coredump;	/* minimal dump size */
 	int hasvdso;
 };
@@ -126,8 +117,7 @@ extern int setup_arg_pages(struct linux_binprm * bprm,
 			   unsigned long stack_top,
 			   int executable_stack);
 extern int bprm_mm_init(struct linux_binprm *bprm);
-extern int copy_strings_kernel(int argc, const char *const *argv,
-			       struct linux_binprm *bprm);
+extern int copy_strings_kernel(int argc,char ** argv,struct linux_binprm *bprm);
 extern int prepare_bprm_creds(struct linux_binprm *bprm);
 extern void install_exec_creds(struct linux_binprm *bprm);
 extern void do_coredump(long signr, int exit_code, struct pt_regs *regs);

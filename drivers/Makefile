@@ -10,7 +10,6 @@ obj-$(CONFIG_PCI)		+= pci/
 obj-$(CONFIG_PARISC)		+= parisc/
 obj-$(CONFIG_RAPIDIO)		+= rapidio/
 obj-y				+= video/
-obj-y				+= idle/
 obj-$(CONFIG_ACPI)		+= acpi/
 obj-$(CONFIG_SFI)		+= sfi/
 # PnP must come after ACPI since it will eventually need to check if acpi
@@ -18,7 +17,6 @@ obj-$(CONFIG_SFI)		+= sfi/
 obj-$(CONFIG_PNP)		+= pnp/
 obj-$(CONFIG_ARM_AMBA)		+= amba/
 
-obj-$(CONFIG_VIRTIO)		+= virtio/
 obj-$(CONFIG_XEN)		+= xen/
 
 # regulators early, since some subsystems rely on them to initialize
@@ -26,7 +24,6 @@ obj-$(CONFIG_REGULATOR)		+= regulator/
 
 # char/ comes before serial/ etc so that the VT console is the boot-time
 # default.
-obj-y				+= tty/
 obj-y				+= char/
 
 # gpu/ comes after char for AGP vs DRM startup
@@ -40,6 +37,7 @@ obj-$(CONFIG_FB_INTEL)          += video/intelfb/
 
 obj-y				+= serial/
 obj-$(CONFIG_PARPORT)		+= parport/
+obj-$(CONFIG_INPUT_KEYBOARD)	+= input/keyboard/
 obj-y				+= base/ block/ misc/ mfd/
 obj-$(CONFIG_NUBUS)		+= nubus/
 obj-y				+= macintosh/
@@ -47,11 +45,15 @@ obj-$(CONFIG_IDE)		+= ide/
 obj-$(CONFIG_SCSI)		+= scsi/
 obj-$(CONFIG_ATA)		+= ata/
 obj-$(CONFIG_MTD)		+= mtd/
+
+obj-$(CONFIG_TINY_FSR)		+= tfsr/
 obj-$(CONFIG_SPI)		+= spi/
+obj-$(CONFIG_SWI)		+= swi/
 obj-y				+= net/
 obj-$(CONFIG_ATM)		+= atm/
 obj-$(CONFIG_FUSION)		+= message/
-obj-y				+= firewire/
+obj-$(CONFIG_FIREWIRE)		+= firewire/
+obj-y				+= ieee1394/
 obj-$(CONFIG_UIO)		+= uio/
 obj-y				+= cdrom/
 obj-y				+= auxdisplay/
@@ -68,7 +70,14 @@ obj-$(CONFIG_USB_OTG_UTILS)	+= usb/otg/
 obj-$(CONFIG_USB)		+= usb/
 obj-$(CONFIG_USB_MUSB_HDRC)	+= usb/musb/
 obj-$(CONFIG_PCI)		+= usb/
-obj-$(CONFIG_USB_GADGET)	+= usb/gadget/
+ifeq ($(CONFIG_USB_GADGET),y)
+obj-$(CONFIG_TARGET_LOCALE_EUR)	+= usb/gadget/
+obj-$(CONFIG_TARGET_LOCALE_HKTW) += usb/gadget/
+obj-$(CONFIG_TARGET_LOCALE_HKTW_FET) += usb/gadget/
+obj-$(CONFIG_TARGET_LOCALE_KOR)	+= usb/gadget/p1_kor/
+obj-$(CONFIG_TARGET_LOCALE_VZW)	+= usb/gadget/
+obj-$(CONFIG_TARGET_LOCALE_USAGSM) += usb/gadget/
+endif
 obj-$(CONFIG_SERIO)		+= input/serio/
 obj-$(CONFIG_GAMEPORT)		+= input/gameport/
 obj-$(CONFIG_INPUT)		+= input/
@@ -92,26 +101,43 @@ obj-$(CONFIG_EISA)		+= eisa/
 obj-y				+= lguest/
 obj-$(CONFIG_CPU_FREQ)		+= cpufreq/
 obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
-obj-$(CONFIG_DMA_ENGINE)	+= dma/
+obj-y				+= idle/
 obj-$(CONFIG_MMC)		+= mmc/
 obj-$(CONFIG_MEMSTICK)		+= memstick/
 obj-$(CONFIG_NEW_LEDS)		+= leds/
+ifeq ($(CONFIG_SWITCH),y)
+obj-$(CONFIG_TARGET_LOCALE_EUR)		+= switch/
+obj-$(CONFIG_TARGET_LOCALE_HKTW)	+= switch/
+obj-$(CONFIG_TARGET_LOCALE_HKTW_FET)	+= switch/
+obj-$(CONFIG_TARGET_LOCALE_KOR)		+= switch/p1_kor/
+obj-$(CONFIG_TARGET_LOCALE_VZW)		+= switch/
+obj-$(CONFIG_TARGET_LOCALE_USAGSM)		+= switch/
+endif
 obj-$(CONFIG_INFINIBAND)	+= infiniband/
 obj-$(CONFIG_SGI_SN)		+= sn/
 obj-y				+= firmware/
 obj-$(CONFIG_CRYPTO)		+= crypto/
 obj-$(CONFIG_SUPERH)		+= sh/
-obj-$(CONFIG_ARCH_SHMOBILE)	+= sh/
-ifndef CONFIG_ARCH_USES_GETTIMEOFFSET
-obj-y				+= clocksource/
-endif
+obj-$(CONFIG_GENERIC_TIME)	+= clocksource/
+obj-$(CONFIG_DMA_ENGINE)	+= dma/
 obj-$(CONFIG_DCA)		+= dca/
 obj-$(CONFIG_HID)		+= hid/
 obj-$(CONFIG_PPC_PS3)		+= ps3/
 obj-$(CONFIG_OF)		+= of/
 obj-$(CONFIG_SSB)		+= ssb/
-obj-$(CONFIG_VHOST_NET)		+= vhost/
+obj-$(CONFIG_VIRTIO)		+= virtio/
 obj-$(CONFIG_VLYNQ)		+= vlynq/
 obj-$(CONFIG_STAGING)		+= staging/
+obj-$(CONFIG_SENSOR)		+= sensor/
 obj-y				+= platform/
 obj-y				+= ieee802154/
+obj-$(CONFIG_DPRAM_BUILT_IN)  += onedram/
+obj-$(CONFIG_ONEDRAM_RECOVERY_BUILT_IN)  += onedram_recovery/
+
+ifneq ($(CONFIG_TARGET_LOCALE_VZW),y)
+obj-$(CONFIG_DPRAM_BUILT_IN)  += svnet/
+obj-$(CONFIG_DPRAM_BUILT_IN)  += modemctl/
+
+endif
+obj-y   += level/
+

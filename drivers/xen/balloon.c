@@ -43,19 +43,15 @@
 #include <linux/mutex.h>
 #include <linux/list.h>
 #include <linux/sysdev.h>
-#include <linux/gfp.h>
 
 #include <asm/page.h>
 #include <asm/pgalloc.h>
 #include <asm/pgtable.h>
 #include <asm/uaccess.h>
 #include <asm/tlb.h>
-#include <asm/e820.h>
 
 #include <asm/xen/hypervisor.h>
 #include <asm/xen/hypercall.h>
-
-#include <xen/xen.h>
 #include <xen/interface/xen.h>
 #include <xen/interface/memory.h>
 #include <xen/xenbus.h>
@@ -85,6 +81,13 @@ static DEFINE_MUTEX(balloon_mutex);
 static struct sys_device balloon_sysdev;
 
 static int register_balloon(struct sys_device *sysdev);
+
+/*
+ * Protects atomic reservation decrease/increase against concurrent increases.
+ * Also protects non-atomic updates of current_pages and driver_pages, and
+ * balloon lists.
+ */
+static DEFINE_SPINLOCK(balloon_lock);
 
 static struct balloon_stats balloon_stats;
 
@@ -120,7 +123,7 @@ static void scrub_page(struct page *page)
 }
 
 /* balloon_append: add the given page to the balloon. */
-static void __balloon_append(struct page *page)
+static void balloon_append(struct page *page)
 {
 	/* Lowmem is re-populated first, so highmem pages go at list tail. */
 	if (PageHighMem(page)) {
@@ -131,11 +134,7 @@ static void __balloon_append(struct page *page)
 		list_add(&page->lru, &ballooned_pages);
 		balloon_stats.balloon_low++;
 	}
-}
 
-static void balloon_append(struct page *page)
-{
-	__balloon_append(page);
 	totalram_pages--;
 }
 
@@ -196,7 +195,7 @@ static unsigned long current_target(void)
 
 static int increase_reservation(unsigned long nr_pages)
 {
-	unsigned long  pfn, i;
+	unsigned long  pfn, i, flags;
 	struct page   *page;
 	long           rc;
 	struct xen_memory_reservation reservation = {
@@ -207,6 +206,8 @@ static int increase_reservation(unsigned long nr_pages)
 
 	if (nr_pages > ARRAY_SIZE(frame_list))
 		nr_pages = ARRAY_SIZE(frame_list);
+
+	spin_lock_irqsave(&balloon_lock, flags);
 
 	page = balloon_first_page();
 	for (i = 0; i < nr_pages; i++) {
@@ -250,12 +251,14 @@ static int increase_reservation(unsigned long nr_pages)
 	balloon_stats.current_pages += rc;
 
  out:
+	spin_unlock_irqrestore(&balloon_lock, flags);
+
 	return rc < 0 ? rc : rc != nr_pages;
 }
 
 static int decrease_reservation(unsigned long nr_pages)
 {
-	unsigned long  pfn, i;
+	unsigned long  pfn, i, flags;
 	struct page   *page;
 	int            need_sleep = 0;
 	int ret;
@@ -293,6 +296,8 @@ static int decrease_reservation(unsigned long nr_pages)
 	kmap_flush_unused();
 	flush_tlb_all();
 
+	spin_lock_irqsave(&balloon_lock, flags);
+
 	/* No more mappings: invalidate P2M and add to balloon. */
 	for (i = 0; i < nr_pages; i++) {
 		pfn = mfn_to_pfn(frame_list[i]);
@@ -306,6 +311,8 @@ static int decrease_reservation(unsigned long nr_pages)
 	BUG_ON(ret != nr_pages);
 
 	balloon_stats.current_pages -= nr_pages;
+
+	spin_unlock_irqrestore(&balloon_lock, flags);
 
 	return need_sleep;
 }
@@ -392,7 +399,7 @@ static struct notifier_block xenstore_notifier;
 
 static int __init balloon_init(void)
 {
-	unsigned long pfn, extra_pfn_end;
+	unsigned long pfn;
 	struct page *page;
 
 	if (!xen_pv_domain())
@@ -413,15 +420,10 @@ static int __init balloon_init(void)
 	register_balloon(&balloon_sysdev);
 
 	/* Initialise the balloon with excess memory space. */
-	extra_pfn_end = min(e820_end_of_ram_pfn(),
-			    (unsigned long)PFN_DOWN(xen_extra_mem_start + xen_extra_mem_size));
-	for (pfn = PFN_UP(xen_extra_mem_start);
-	     pfn < extra_pfn_end;
-	     pfn++) {
+	for (pfn = xen_start_info->nr_pages; pfn < max_pfn; pfn++) {
 		page = pfn_to_page(pfn);
-		/* totalram_pages doesn't include the boot-time
-		   balloon extension, so don't subtract from it. */
-		__balloon_append(page);
+		if (!PageReserved(page))
+			balloon_append(page);
 	}
 
 	target_watch.callback = watch_target;

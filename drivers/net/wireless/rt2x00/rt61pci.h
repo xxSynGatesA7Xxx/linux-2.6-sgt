@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2004 - 2009 Ivo van Doorn <IvDoorn@gmail.com>
+	Copyright (C) 2004 - 2009 rt2x00 SourceForge Project
 	<http://rt2x00.serialmonkey.com>
 
 	This program is free software; you can redistribute it and/or modify
@@ -28,13 +28,6 @@
 #define RT61PCI_H
 
 /*
- * RT chip PCI IDs.
- */
-#define RT2561s_PCI_ID			0x0301
-#define RT2561_PCI_ID			0x0302
-#define RT2661_PCI_ID			0x0401
-
-/*
  * RF chip defines.
  */
 #define RF5225				0x0001
@@ -44,7 +37,7 @@
 
 /*
  * Signal information.
- * Default offset is required for RSSI <-> dBm conversion.
+ * Defaul offset is required for RSSI <-> dBm conversion.
  */
 #define DEFAULT_RSSI_OFFSET		120
 
@@ -153,13 +146,13 @@ struct hw_key_entry {
 	u8 key[16];
 	u8 tx_mic[8];
 	u8 rx_mic[8];
-} __packed;
+} __attribute__ ((packed));
 
 struct hw_pairwise_ta_entry {
 	u8 address[6];
 	u8 cipher;
 	u8 reserved;
-} __packed;
+} __attribute__ ((packed));
 
 /*
  * Other on-chip shared memory space.
@@ -232,8 +225,6 @@ struct hw_pairwise_ta_entry {
  * MAC_CSR0: ASIC revision number.
  */
 #define MAC_CSR0			0x3000
-#define MAC_CSR0_REVISION		FIELD32(0x0000000f)
-#define MAC_CSR0_CHIPSET		FIELD32(0x000ffff0)
 
 /*
  * MAC_CSR1: System control register.

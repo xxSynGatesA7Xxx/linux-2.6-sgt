@@ -24,7 +24,13 @@ struct s3c_dma_params {
 
 #define S3C24XX_DAI_I2S			0
 
+//#define pr_debug(fmt...) printk(fmt) 
 /* platform data */
+extern struct snd_soc_platform s3c24xx_soc_platform;
+extern struct snd_soc_platform s3c24xx_pcm_soc_platform;
 extern struct snd_ac97_bus_ops s3c24xx_ac97_ops;
+#if defined(CONFIG_TARGET_LOCALE_LTN)	//latin_cam:kihyung.nam added for NMI625 sound
+extern struct snd_soc_platform s5pc110_soc_platform;
+#endif
 
 #endif

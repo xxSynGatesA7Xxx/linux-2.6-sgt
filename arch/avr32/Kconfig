@@ -1,3 +1,10 @@
+#
+# For a description of the syntax of this configuration file,
+# see Documentation/kbuild/kconfig-language.txt.
+#
+
+mainmenu "Linux Kernel Configuration"
+
 config AVR32
 	def_bool y
 	# With EMBEDDED=n, we get lots of stuff automatically selected
@@ -36,6 +43,9 @@ config GENERIC_IRQ_PROBE
 	def_bool y
 
 config RWSEM_GENERIC_SPINLOCK
+	def_bool y
+
+config GENERIC_TIME
 	def_bool y
 
 config GENERIC_CLOCKEVENTS
@@ -82,8 +92,6 @@ config PLATFORM_AT32AP
 	select PERFORMANCE_COUNTERS
 	select ARCH_REQUIRE_GPIOLIB
 	select GENERIC_ALLOCATOR
-	select HAVE_FB_ATMEL
-	select HAVE_NET_MACB
 
 #
 # CPU types
@@ -103,11 +111,6 @@ config CPU_AT32AP7002
 	bool
 	select CPU_AT32AP700X
 
-# AP700X boards
-config BOARD_ATNGW100_COMMON
-	bool
-	select CPU_AT32AP7000
-
 choice
 	prompt "AVR32 board type"
 	default BOARD_ATSTK1000
@@ -115,13 +118,9 @@ choice
 config BOARD_ATSTK1000
 	bool "ATSTK1000 evaluation board"
 
-config BOARD_ATNGW100_MKI
+config BOARD_ATNGW100
 	bool "ATNGW100 Network Gateway"
-	select BOARD_ATNGW100_COMMON
-
-config BOARD_ATNGW100_MKII
-	bool "ATNGW100 mkII Network Gateway"
-	select BOARD_ATNGW100_COMMON
+	select CPU_AT32AP7000
 
 config BOARD_HAMMERHEAD
 	bool "Hammerhead board"
@@ -139,7 +138,7 @@ config BOARD_HAMMERHEAD
 	  will cover even the most exceptional need of memory bandwidth. Together with the onboard
 	  video decoder the board is ready for video processing.
 
-	  For more information see: http://www.miromico.ch/index.php/hammerhead.html 
+	  For more information see: http://www.miromico.com/hammerhead
 
 config BOARD_FAVR_32
 	bool "Favr-32 LCD-board"

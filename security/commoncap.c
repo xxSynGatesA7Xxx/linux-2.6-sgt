@@ -1,4 +1,4 @@
-/* Common capabilities, needed by capability.o.
+/* Common capabilities, needed by capability.o and root_plug.o
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
@@ -28,6 +28,10 @@
 #include <linux/prctl.h>
 #include <linux/securebits.h>
 
+#ifdef CONFIG_ANDROID_PARANOID_NETWORK
+#include <linux/android_aid.h>
+#endif
+
 /*
  * If a non-root user executes a setuid-root binary in
  * !secure(SECURE_NOROOT) mode, then we raise capabilities.
@@ -39,7 +43,7 @@
  *
  * Warn if that happens, once per boot.
  */
-static void warn_setuid_and_fcaps_mixed(const char *fname)
+static void warn_setuid_and_fcaps_mixed(char *fname)
 {
 	static int warned;
 	if (!warned) {
@@ -82,6 +86,12 @@ EXPORT_SYMBOL(cap_netlink_recv);
 int cap_capable(struct task_struct *tsk, const struct cred *cred, int cap,
 		int audit)
 {
+#ifdef CONFIG_ANDROID_PARANOID_NETWORK
+	if (cap == CAP_NET_RAW && in_egroup_p(AID_NET_RAW))
+		return 0;
+	if (cap == CAP_NET_ADMIN && in_egroup_p(AID_NET_ADMIN))
+		return 0;
+#endif
 	return cap_raised(cred->cap_effective, cap) ? 0 : -EPERM;
 }
 
@@ -173,6 +183,7 @@ int cap_capget(struct task_struct *target, kernel_cap_t *effective,
  */
 static inline int cap_inh_is_capped(void)
 {
+#ifdef CONFIG_SECURITY_FILE_CAPABILITIES
 
 	/* they are so limited unless the current task has the CAP_SETPCAP
 	 * capability
@@ -180,6 +191,7 @@ static inline int cap_inh_is_capped(void)
 	if (cap_capable(current, current_cred(), CAP_SETPCAP,
 			SECURITY_CAP_AUDIT) == 0)
 		return 0;
+#endif
 	return 1;
 }
 
@@ -236,6 +248,8 @@ static inline void bprm_clear_caps(struct linux_binprm *bprm)
 	cap_clear(bprm->cred->cap_permitted);
 	bprm->cap_effective = false;
 }
+
+#ifdef CONFIG_SECURITY_FILE_CAPABILITIES
 
 /**
  * cap_inode_need_killpriv - Determine if inode change affects privileges
@@ -417,6 +431,49 @@ out:
 	return rc;
 }
 
+#else
+int cap_inode_need_killpriv(struct dentry *dentry)
+{
+	return 0;
+}
+
+int cap_inode_killpriv(struct dentry *dentry)
+{
+	return 0;
+}
+
+int get_vfs_caps_from_disk(const struct dentry *dentry, struct cpu_vfs_cap_data *cpu_caps)
+{
+	memset(cpu_caps, 0, sizeof(struct cpu_vfs_cap_data));
+ 	return -ENODATA;
+}
+
+static inline int get_file_caps(struct linux_binprm *bprm, bool *effective)
+{
+	bprm_clear_caps(bprm);
+	return 0;
+}
+#endif
+
+/*
+ * Determine whether a exec'ing process's new permitted capabilities should be
+ * limited to just what it already has.
+ *
+ * This prevents processes that are being ptraced from gaining access to
+ * CAP_SETPCAP, unless the process they're tracing already has it, and the
+ * binary they're executing has filecaps that elevate it.
+ *
+ *  Returns 1 if they should be limited, 0 if they are not.
+ */
+static inline int cap_limit_ptraced_target(void)
+{
+#ifndef CONFIG_SECURITY_FILE_CAPABILITIES
+	if (capable(CAP_SETPCAP))
+		return 0;
+#endif
+	return 1;
+}
+
 /**
  * cap_bprm_set_creds - Set up the proposed credentials for execve().
  * @bprm: The execution parameters, including the proposed creds
@@ -476,8 +533,9 @@ skip:
 			new->euid = new->uid;
 			new->egid = new->gid;
 		}
-		new->cap_permitted = cap_intersect(new->cap_permitted,
-						   old->cap_permitted);
+		if (cap_limit_ptraced_target())
+			new->cap_permitted = cap_intersect(new->cap_permitted,
+							   old->cap_permitted);
 	}
 
 	new->suid = new->fsuid = new->euid;
@@ -569,7 +627,7 @@ int cap_inode_setxattr(struct dentry *dentry, const char *name,
 	}
 
 	if (!strncmp(name, XATTR_SECURITY_PREFIX,
-		     sizeof(XATTR_SECURITY_PREFIX) - 1) &&
+		     sizeof(XATTR_SECURITY_PREFIX) - 1)  &&
 	    !capable(CAP_SYS_ADMIN))
 		return -EPERM;
 	return 0;
@@ -595,7 +653,7 @@ int cap_inode_removexattr(struct dentry *dentry, const char *name)
 	}
 
 	if (!strncmp(name, XATTR_SECURITY_PREFIX,
-		     sizeof(XATTR_SECURITY_PREFIX) - 1) &&
+		     sizeof(XATTR_SECURITY_PREFIX) - 1)  &&
 	    !capable(CAP_SYS_ADMIN))
 		return -EPERM;
 	return 0;
@@ -691,6 +749,7 @@ int cap_task_fix_setuid(struct cred *new, const struct cred *old, int flags)
 	return 0;
 }
 
+#ifdef CONFIG_SECURITY_FILE_CAPABILITIES
 /*
  * Rationale: code calling task_setscheduler, task_setioprio, and
  * task_setnice, assumes that
@@ -718,11 +777,14 @@ static int cap_safe_nice(struct task_struct *p)
 /**
  * cap_task_setscheduler - Detemine if scheduler policy change is permitted
  * @p: The task to affect
+ * @policy: The policy to effect
+ * @lp: The parameters to the scheduling policy
  *
  * Detemine if the requested scheduler policy change is permitted for the
  * specified task, returning 0 if permission is granted, -ve if denied.
  */
-int cap_task_setscheduler(struct task_struct *p)
+int cap_task_setscheduler(struct task_struct *p, int policy,
+			   struct sched_param *lp)
 {
 	return cap_safe_nice(p);
 }
@@ -768,6 +830,22 @@ static long cap_prctl_drop(struct cred *new, unsigned long cap)
 	return 0;
 }
 
+#else
+int cap_task_setscheduler (struct task_struct *p, int policy,
+			   struct sched_param *lp)
+{
+	return 0;
+}
+int cap_task_setioprio (struct task_struct *p, int ioprio)
+{
+	return 0;
+}
+int cap_task_setnice (struct task_struct *p, int nice)
+{
+	return 0;
+}
+#endif
+
 /**
  * cap_task_prctl - Implement process control functions for this security module
  * @option: The process control function requested
@@ -798,6 +876,7 @@ int cap_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 		error = !!cap_raised(new->cap_bset, arg2);
 		goto no_change;
 
+#ifdef CONFIG_SECURITY_FILE_CAPABILITIES
 	case PR_CAPBSET_DROP:
 		error = cap_prctl_drop(new, arg2);
 		if (error < 0)
@@ -848,6 +927,8 @@ int cap_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 		error = new->securebits;
 		goto no_change;
 
+#endif /* def CONFIG_SECURITY_FILE_CAPABILITIES */
+
 	case PR_GET_KEEPCAPS:
 		if (issecure(SECURE_KEEP_CAPS))
 			error = 1;
@@ -883,6 +964,20 @@ error:
 }
 
 /**
+ * cap_syslog - Determine whether syslog function is permitted
+ * @type: Function requested
+ *
+ * Determine whether the current process is permitted to use a particular
+ * syslog function, returning 0 if permission is granted, -ve if not.
+ */
+int cap_syslog(int type)
+{
+	if ((type != 3 && type != 10) && !capable(CAP_SYS_ADMIN))
+		return -EPERM;
+	return 0;
+}
+
+/**
  * cap_vm_enough_memory - Determine whether a new virtual mapping is permitted
  * @mm: The VM space in which the new mapping is to be made
  * @pages: The size of the mapping
@@ -909,7 +1004,7 @@ int cap_vm_enough_memory(struct mm_struct *mm, long pages)
  * @addr: address attempting to be mapped
  * @addr_only: unused
  *
- * If the process is attempting to map memory below dac_mmap_min_addr they need
+ * If the process is attempting to map memory below mmap_min_addr they need
  * CAP_SYS_RAWIO.  The other parameters to this function are unused by the
  * capability security module.  Returns 0 if this mapping should be allowed
  * -EPERM if not.

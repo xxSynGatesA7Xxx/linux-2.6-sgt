@@ -239,8 +239,6 @@ static int vidioc_s_frequency(struct file *file, void *priv,
 {
 	struct trust *tr = video_drvdata(file);
 
-	if (f->tuner != 0 || f->type != V4L2_TUNER_RADIO)
-		return -EINVAL;
 	tr_setfreq(tr, f->frequency);
 	return 0;
 }
@@ -250,8 +248,6 @@ static int vidioc_g_frequency(struct file *file, void *priv,
 {
 	struct trust *tr = video_drvdata(file);
 
-	if (f->tuner != 0)
-		return -EINVAL;
 	f->type = V4L2_TUNER_RADIO;
 	f->frequency = tr->curfreq;
 	return 0;

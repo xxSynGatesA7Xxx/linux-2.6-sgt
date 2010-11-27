@@ -14,8 +14,6 @@
 #include <linux/moduleparam.h>
 #include <linux/timer.h>
 
-#include "internals.h"
-
 static int irqfixup __read_mostly;
 
 #define POLL_SPURIOUS_IRQ_INTERVAL (HZ/10)
@@ -30,7 +28,7 @@ static int try_one_irq(int irq, struct irq_desc *desc)
 	struct irqaction *action;
 	int ok = 0, work = 0;
 
-	raw_spin_lock(&desc->lock);
+	spin_lock(&desc->lock);
 	/* Already running on another processor */
 	if (desc->status & IRQ_INPROGRESS) {
 		/*
@@ -39,13 +37,13 @@ static int try_one_irq(int irq, struct irq_desc *desc)
 		 */
 		if (desc->action && (desc->action->flags & IRQF_SHARED))
 			desc->status |= IRQ_PENDING;
-		raw_spin_unlock(&desc->lock);
+		spin_unlock(&desc->lock);
 		return ok;
 	}
 	/* Honour the normal IRQ locking */
 	desc->status |= IRQ_INPROGRESS;
 	action = desc->action;
-	raw_spin_unlock(&desc->lock);
+	spin_unlock(&desc->lock);
 
 	while (action) {
 		/* Only shared IRQ handlers are safe to call */
@@ -58,7 +56,7 @@ static int try_one_irq(int irq, struct irq_desc *desc)
 	}
 	local_irq_disable();
 	/* Now clean up the flags */
-	raw_spin_lock(&desc->lock);
+	spin_lock(&desc->lock);
 	action = desc->action;
 
 	/*
@@ -70,9 +68,9 @@ static int try_one_irq(int irq, struct irq_desc *desc)
 		 * Perform real IRQ processing for the IRQ we deferred
 		 */
 		work = 1;
-		raw_spin_unlock(&desc->lock);
+		spin_unlock(&desc->lock);
 		handle_IRQ_event(irq, action);
-		raw_spin_lock(&desc->lock);
+		spin_lock(&desc->lock);
 		desc->status &= ~IRQ_PENDING;
 	}
 	desc->status &= ~IRQ_INPROGRESS;
@@ -80,9 +78,9 @@ static int try_one_irq(int irq, struct irq_desc *desc)
 	 * If we did actual work for the real IRQ line we must let the
 	 * IRQ controller clean up too
 	 */
-	if (work)
-		irq_end(irq, desc);
-	raw_spin_unlock(&desc->lock);
+	if (work && desc->chip && desc->chip->end)
+		desc->chip->end(irq);
+	spin_unlock(&desc->lock);
 
 	return ok;
 }
@@ -106,7 +104,7 @@ static int misrouted_irq(int irq)
 	return ok;
 }
 
-static void poll_spurious_irqs(unsigned long dummy)
+static void poll_all_shared_irqs(void)
 {
 	struct irq_desc *desc;
 	int i;
@@ -127,10 +125,22 @@ static void poll_spurious_irqs(unsigned long dummy)
 		try_one_irq(i, desc);
 		local_irq_enable();
 	}
+}
+
+static void poll_spurious_irqs(unsigned long dummy)
+{
+	poll_all_shared_irqs();
 
 	mod_timer(&poll_spurious_irq_timer,
 		  jiffies + POLL_SPURIOUS_IRQ_INTERVAL);
 }
+
+#ifdef CONFIG_DEBUG_SHIRQ
+void debug_poll_all_shared_irqs(void)
+{
+	poll_all_shared_irqs();
+}
+#endif
 
 /*
  * If 99,900 of the previous 100,000 interrupts have not been handled
@@ -222,7 +232,7 @@ void note_interrupt(unsigned int irq, struct irq_desc *desc,
 		/*
 		 * If we are seeing only the odd spurious IRQ caused by
 		 * bus asynchronicity then don't eventually trigger an error,
-		 * otherwise the counter becomes a doomsday timer for otherwise
+		 * otherwise the couter becomes a doomsday timer for otherwise
 		 * working systems
 		 */
 		if (time_after(jiffies, desc->last_unhandled + HZ/10))
@@ -256,7 +266,7 @@ void note_interrupt(unsigned int irq, struct irq_desc *desc,
 		printk(KERN_EMERG "Disabling IRQ #%d\n", irq);
 		desc->status |= IRQ_DISABLED | IRQ_SPURIOUS_DISABLED;
 		desc->depth++;
-		desc->irq_data.chip->irq_disable(&desc->irq_data);
+		desc->chip->disable(irq);
 
 		mod_timer(&poll_spurious_irq_timer,
 			  jiffies + POLL_SPURIOUS_IRQ_INTERVAL);

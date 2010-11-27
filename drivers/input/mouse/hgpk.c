@@ -30,7 +30,6 @@
  */
 
 #define DEBUG
-#include <linux/slab.h>
 #include <linux/input.h>
 #include <linux/serio.h>
 #include <linux/libps2.h>
@@ -40,8 +39,8 @@
 #include "psmouse.h"
 #include "hgpk.h"
 
-static bool tpdebug;
-module_param(tpdebug, bool, 0644);
+static int tpdebug;
+module_param(tpdebug, int, 0644);
 MODULE_PARM_DESC(tpdebug, "enable debugging, dumping packets to KERN_DEBUG.");
 
 static int recalib_delta = 100;
@@ -68,6 +67,10 @@ static int post_interrupt_delay = 1000;
 module_param(post_interrupt_delay, int, 0644);
 MODULE_PARM_DESC(post_interrupt_delay,
 	"delay (ms) before recal after recal interrupt detected");
+
+static int autorecal = 1;
+module_param(autorecal, int, 0644);
+MODULE_PARM_DESC(autorecal, "enable recalibration in the driver");
 
 /*
  * When the touchpad gets ultra-sensitive, one can keep their finger 1/2"
@@ -424,7 +427,21 @@ static void hgpk_recalib_work(struct work_struct *work)
 
 static int hgpk_register(struct psmouse *psmouse)
 {
+	struct input_dev *dev = psmouse->dev;
 	int err;
+
+	/* unset the things that psmouse-base sets which we don't have */
+	__clear_bit(BTN_MIDDLE, dev->keybit);
+
+	/* set the things we do have */
+	__set_bit(EV_KEY, dev->evbit);
+	__set_bit(EV_REL, dev->evbit);
+
+	__set_bit(REL_X, dev->relbit);
+	__set_bit(REL_Y, dev->relbit);
+
+	__set_bit(BTN_LEFT, dev->keybit);
+	__set_bit(BTN_RIGHT, dev->keybit);
 
 	/* register handlers */
 	psmouse->protocol_handler = hgpk_process_byte;

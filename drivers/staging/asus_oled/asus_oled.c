@@ -24,7 +24,7 @@
  *
  *
  *  Asus OLED support is based on asusoled program taken from
- *  <http://lapsus.berlios.de/asus_oled.html>.
+ *  https://launchpad.net/asusoled/.
  *
  *
  */
@@ -51,10 +51,6 @@
 #define ASUS_OLED_MAX_WIDTH		1792
 #define ASUS_OLED_DISP_HEIGHT		32
 #define ASUS_OLED_PACKET_BUF_SIZE	256
-
-#define USB_VENDOR_ID_ASUS      0x0b05
-#define USB_DEVICE_ID_ASUS_LCM      0x1726
-#define USB_DEVICE_ID_ASUS_LCM2     0x175b
 
 MODULE_AUTHOR("Jakub Schmidtke, sjakub@gmail.com");
 MODULE_DESCRIPTION("Asus OLED Driver v" ASUS_OLED_VERSION);
@@ -87,20 +83,18 @@ struct oled_dev_desc_str {
 };
 
 /* table of devices that work with this driver */
-static const struct usb_device_id id_table[] = {
+static struct usb_device_id id_table[] = {
 	/* Asus G1/G2 (and variants)*/
-	{ USB_DEVICE(USB_VENDOR_ID_ASUS, USB_DEVICE_ID_ASUS_LCM) },
+	{ USB_DEVICE(0x0b05, 0x1726) },
 	/* Asus G50V (and possibly others - G70? G71?)*/
-	{ USB_DEVICE(USB_VENDOR_ID_ASUS, USB_DEVICE_ID_ASUS_LCM2) },
+	{ USB_DEVICE(0x0b05, 0x175b) },
 	{ },
 };
 
 /* parameters of specific devices */
 static struct oled_dev_desc_str oled_dev_desc_table[] = {
-	{ USB_VENDOR_ID_ASUS, USB_DEVICE_ID_ASUS_LCM, 128, PACK_MODE_G1,
-		"G1/G2" },
-	{ USB_VENDOR_ID_ASUS, USB_DEVICE_ID_ASUS_LCM2, 256, PACK_MODE_G50,
-		"G50" },
+	{ 0x0b05, 0x1726, 128, PACK_MODE_G1, "G1/G2" },
+	{ 0x0b05, 0x175b, 256, PACK_MODE_G50, "G50" },
 	{ },
 };
 
@@ -430,11 +424,6 @@ static ssize_t odev_set_picture(struct asus_oled_dev *odev,
 
 		kfree(odev->buf);
 		odev->buf = kmalloc(odev->buf_size, GFP_KERNEL);
-		if (odev->buf == NULL) {
-			odev->buf_size = 0;
-			printk(ASUS_OLED_ERROR "Out of memory!\n");
-			return -ENOMEM;
-		}
 
 		memset(odev->buf, 0xff, odev->buf_size);
 
@@ -770,8 +759,13 @@ static struct usb_driver oled_driver = {
 	.id_table =	id_table,
 };
 
-static CLASS_ATTR_STRING(version, S_IRUGO,
-			ASUS_OLED_UNDERSCORE_NAME " " ASUS_OLED_VERSION);
+static ssize_t version_show(struct class *dev, char *buf)
+{
+	return sprintf(buf, ASUS_OLED_UNDERSCORE_NAME " %s\n",
+		       ASUS_OLED_VERSION);
+}
+
+static CLASS_ATTR(version, S_IRUGO, version_show, NULL);
 
 static int __init asus_oled_init(void)
 {
@@ -783,7 +777,7 @@ static int __init asus_oled_init(void)
 		return PTR_ERR(oled_class);
 	}
 
-	retval = class_create_file(oled_class, &class_attr_version.attr);
+	retval = class_create_file(oled_class, &class_attr_version);
 	if (retval) {
 		err("Error creating class version file");
 		goto error;
@@ -805,7 +799,7 @@ error:
 
 static void __exit asus_oled_exit(void)
 {
-	class_remove_file(oled_class, &class_attr_version.attr);
+	class_remove_file(oled_class, &class_attr_version);
 	class_destroy(oled_class);
 
 	usb_deregister(&oled_driver);

@@ -17,7 +17,6 @@
 #include <linux/input.h>
 #include <linux/delay.h>
 #include <linux/workqueue.h>
-#include <linux/slab.h>
 
 #define DRIVER_NAME		"synaptics_i2c"
 /* maximum product id is 15 characters */
@@ -421,8 +420,8 @@ static void synaptics_i2c_check_params(struct synaptics_i2c *touch)
 }
 
 /* Control the Device polling rate / Work Handler sleep time */
-static unsigned long synaptics_i2c_adjust_delay(struct synaptics_i2c *touch,
-						bool have_data)
+unsigned long synaptics_i2c_adjust_delay(struct synaptics_i2c *touch,
+					 bool have_data)
 {
 	unsigned long delay, nodata_count_thres;
 
@@ -521,7 +520,7 @@ static void synaptics_i2c_set_input_params(struct synaptics_i2c *touch)
 	__set_bit(BTN_LEFT, input->keybit);
 }
 
-static struct synaptics_i2c *synaptics_i2c_touch_create(struct i2c_client *client)
+struct synaptics_i2c *synaptics_i2c_touch_create(struct i2c_client *client)
 {
 	struct synaptics_i2c *touch;
 
@@ -613,6 +612,7 @@ static int __devexit synaptics_i2c_remove(struct i2c_client *client)
 		free_irq(client->irq, touch);
 
 	input_unregister_device(touch->input);
+	i2c_set_clientdata(client, NULL);
 	kfree(touch);
 
 	return 0;

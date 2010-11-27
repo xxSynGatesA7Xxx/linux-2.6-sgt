@@ -76,30 +76,6 @@ static void edac_mc_dump_mci(struct mem_ctl_info *mci)
 	debugf3("\tpvt_info = %p\n\n", mci->pvt_info);
 }
 
-/*
- * keep those in sync with the enum mem_type
- */
-const char *edac_mem_types[] = {
-	"Empty csrow",
-	"Reserved csrow type",
-	"Unknown csrow type",
-	"Fast page mode RAM",
-	"Extended data out RAM",
-	"Burst Extended data out RAM",
-	"Single data rate SDRAM",
-	"Registered single data rate SDRAM",
-	"Double data rate SDRAM",
-	"Registered Double data rate SDRAM",
-	"Rambus DRAM",
-	"Unbuffered DDR2 RAM",
-	"Fully buffered DDR2",
-	"Registered DDR2 RAM",
-	"Rambus XDR",
-	"Unbuffered DDR3 RAM",
-	"Registered DDR3 RAM",
-};
-EXPORT_SYMBOL_GPL(edac_mem_types);
-
 #endif				/* CONFIG_EDAC_DEBUG */
 
 /* 'ptr' points to a possibly unaligned item X such that sizeof(X) is 'size'.
@@ -207,7 +183,6 @@ struct mem_ctl_info *edac_mc_alloc(unsigned sz_pvt, unsigned nr_csrows,
 	}
 
 	mci->op_state = OP_ALLOC;
-	INIT_LIST_HEAD(&mci->grp_kobj_list);
 
 	/*
 	 * Initialize the 'root' kobj for the edac_mc controller
@@ -235,24 +210,18 @@ EXPORT_SYMBOL_GPL(edac_mc_alloc);
  */
 void edac_mc_free(struct mem_ctl_info *mci)
 {
-	debugf1("%s()\n", __func__);
-
 	edac_mc_unregister_sysfs_main_kobj(mci);
-
-	/* free the mci instance memory here */
-	kfree(mci);
 }
 EXPORT_SYMBOL_GPL(edac_mc_free);
 
 
-/**
+/*
  * find_mci_by_dev
  *
  *	scan list of controllers looking for the one that manages
  *	the 'dev' device
- * @dev: pointer to a struct device related with the MCI
  */
-struct mem_ctl_info *find_mci_by_dev(struct device *dev)
+static struct mem_ctl_info *find_mci_by_dev(struct device *dev)
 {
 	struct mem_ctl_info *mci;
 	struct list_head *item;
@@ -268,7 +237,6 @@ struct mem_ctl_info *find_mci_by_dev(struct device *dev)
 
 	return NULL;
 }
-EXPORT_SYMBOL_GPL(find_mci_by_dev);
 
 /*
  * handler for EDAC to check if NMI type handler has asserted interrupt
@@ -346,9 +314,6 @@ static void edac_mc_workq_setup(struct mem_ctl_info *mci, unsigned msec)
 static void edac_mc_workq_teardown(struct mem_ctl_info *mci)
 {
 	int status;
-
-	if (mci->op_state != OP_RUNNING_POLL)
-		return;
 
 	status = cancel_delayed_work(&mci->work);
 	if (status == 0) {

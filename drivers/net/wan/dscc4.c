@@ -89,7 +89,6 @@
 #include <linux/pci.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
-#include <linux/slab.h>
 
 #include <asm/system.h>
 #include <asm/cache.h>
@@ -1129,7 +1128,7 @@ done:
         init_timer(&dpriv->timer);
         dpriv->timer.expires = jiffies + 10*HZ;
         dpriv->timer.data = (unsigned long)dev;
-	dpriv->timer.function = dscc4_timer;
+        dpriv->timer.function = &dscc4_timer;
         add_timer(&dpriv->timer);
 	netif_carrier_on(dev);
 
@@ -1174,6 +1173,8 @@ static netdev_tx_t dscc4_start_xmit(struct sk_buff *skb,
 	while (dscc4_tx_poll(dpriv, dev));
 	spin_unlock(&dpriv->lock);
 #endif
+
+	dev->trans_start = jiffies;
 
 	if (debug > 2)
 		dscc4_tx_print(dev, dpriv, "Xmit");
@@ -2049,7 +2050,7 @@ static int __init dscc4_setup(char *str)
 __setup("dscc4.setup=", dscc4_setup);
 #endif
 
-static DEFINE_PCI_DEVICE_TABLE(dscc4_pci_tbl) = {
+static struct pci_device_id dscc4_pci_tbl[] = {
 	{ PCI_VENDOR_ID_SIEMENS, PCI_DEVICE_ID_SIEMENS_DSCC4,
 	        PCI_ANY_ID, PCI_ANY_ID, },
 	{ 0,}

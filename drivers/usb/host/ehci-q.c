@@ -616,11 +616,9 @@ qh_urb_transaction (
 ) {
 	struct ehci_qtd		*qtd, *qtd_prev;
 	dma_addr_t		buf;
-	int			len, this_sg_len, maxpacket;
+	int			len, maxpacket;
 	int			is_input;
 	u32			token;
-	int			i;
-	struct scatterlist	*sg;
 
 	/*
 	 * URBs map to sequences of QTDs:  one logical transaction
@@ -661,20 +659,7 @@ qh_urb_transaction (
 	/*
 	 * data transfer stage:  buffer setup
 	 */
-	i = urb->num_sgs;
-	if (len > 0 && i > 0) {
-		sg = urb->sg;
-		buf = sg_dma_address(sg);
-
-		/* urb->transfer_buffer_length may be smaller than the
-		 * size of the scatterlist (or vice versa)
-		 */
-		this_sg_len = min_t(int, sg_dma_len(sg), len);
-	} else {
-		sg = NULL;
-		buf = urb->transfer_dma;
-		this_sg_len = len;
-	}
+	buf = urb->transfer_dma;
 
 	if (is_input)
 		token |= (1 /* "in" */ << 8);
@@ -690,9 +675,7 @@ qh_urb_transaction (
 	for (;;) {
 		int this_qtd_len;
 
-		this_qtd_len = qtd_fill(ehci, qtd, buf, this_sg_len, token,
-				maxpacket);
-		this_sg_len -= this_qtd_len;
+		this_qtd_len = qtd_fill(ehci, qtd, buf, len, token, maxpacket);
 		len -= this_qtd_len;
 		buf += this_qtd_len;
 
@@ -708,13 +691,8 @@ qh_urb_transaction (
 		if ((maxpacket & (this_qtd_len + (maxpacket - 1))) == 0)
 			token ^= QTD_TOGGLE;
 
-		if (likely(this_sg_len <= 0)) {
-			if (--i <= 0 || len <= 0)
-				break;
-			sg = sg_next(sg);
-			buf = sg_dma_address(sg);
-			this_sg_len = min_t(int, sg_dma_len(sg), len);
-		}
+		if (likely (len <= 0))
+			break;
 
 		qtd_prev = qtd;
 		qtd = ehci_qtd_alloc (ehci, flags);
@@ -1126,7 +1104,8 @@ submit_async (
 #endif
 
 	spin_lock_irqsave (&ehci->lock, flags);
-	if (unlikely(!HCD_HW_ACCESSIBLE(ehci_to_hcd(ehci)))) {
+	if (unlikely(!test_bit(HCD_FLAG_HW_ACCESSIBLE,
+			       &ehci_to_hcd(ehci)->flags))) {
 		rc = -ESHUTDOWN;
 		goto done;
 	}

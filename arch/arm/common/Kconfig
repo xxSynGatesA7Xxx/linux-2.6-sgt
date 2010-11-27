@@ -6,16 +6,16 @@ config ARM_VIC
 
 config ARM_VIC_NR
 	int
-	default 2
+	default 4
 	depends on ARM_VIC
 	help
 	  The maximum number of VICs available in the system, for
 	  power management.
 
-config ICST
+config ICST525
 	bool
 
-config PL330
+config ICST307
 	bool
 
 config SA1111
@@ -40,4 +40,3 @@ config SHARP_SCOOP
 
 config COMMON_CLKDEV
 	bool
-	select HAVE_CLK

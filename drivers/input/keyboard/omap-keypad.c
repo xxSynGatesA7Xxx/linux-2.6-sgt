@@ -34,14 +34,13 @@
 #include <linux/platform_device.h>
 #include <linux/mutex.h>
 #include <linux/errno.h>
-#include <linux/slab.h>
 #include <mach/gpio.h>
-#include <plat/keypad.h>
-#include <plat/menelaus.h>
+#include <mach/keypad.h>
+#include <mach/menelaus.h>
 #include <asm/irq.h>
 #include <mach/hardware.h>
 #include <asm/io.h>
-#include <plat/mux.h>
+#include <mach/mux.h>
 
 #undef NEW_BOARD_LEARNING_MODE
 

@@ -1,8 +1,8 @@
 /*
  *      uvc_queue.c  --  USB Video Class driver - Buffers management
  *
- *      Copyright (C) 2005-2010
- *          Laurent Pinchart (laurent.pinchart@ideasonboard.com)
+ *      Copyright (C) 2005-2009
+ *          Laurent Pinchart (laurent.pinchart@skynet.be)
  *
  *      This program is free software; you can redistribute it and/or modify
  *      it under the terms of the GNU General Public License as published by
@@ -59,9 +59,9 @@
  *    returns immediately.
  *
  *    When the buffer is full, the completion handler removes it from the irq
- *    queue, marks it as done (UVC_BUF_STATE_DONE) and wakes its wait queue.
+ *    queue, marks it as ready (UVC_BUF_STATE_DONE) and wakes its wait queue.
  *    At that point, any process waiting on the buffer will be woken up. If a
- *    process tries to dequeue a buffer after it has been marked done, the
+ *    process tries to dequeue a buffer after it has been marked ready, the
  *    dequeing will succeed immediately.
  *
  * 2. Buffers are queued, user is waiting on a buffer and the device gets
@@ -78,14 +78,12 @@
  *
  */
 
-void uvc_queue_init(struct uvc_video_queue *queue, enum v4l2_buf_type type,
-		    int drop_corrupted)
+void uvc_queue_init(struct uvc_video_queue *queue, enum v4l2_buf_type type)
 {
 	mutex_init(&queue->mutex);
 	spin_lock_init(&queue->irqlock);
 	INIT_LIST_HEAD(&queue->mainqueue);
 	INIT_LIST_HEAD(&queue->irqqueue);
-	queue->flags = drop_corrupted ? UVC_QUEUE_DROP_CORRUPTED : 0;
 	queue->type = type;
 }
 
@@ -135,6 +133,7 @@ int uvc_alloc_buffers(struct uvc_video_queue *queue, unsigned int nbuffers,
 		queue->buffer[i].buf.m.offset = i * bufsize;
 		queue->buffer[i].buf.length = buflength;
 		queue->buffer[i].buf.type = queue->type;
+		queue->buffer[i].buf.sequence = 0;
 		queue->buffer[i].buf.field = V4L2_FIELD_NONE;
 		queue->buffer[i].buf.memory = V4L2_MEMORY_MMAP;
 		queue->buffer[i].buf.flags = 0;
@@ -202,7 +201,6 @@ static void __uvc_query_buffer(struct uvc_buffer *buf,
 		break;
 	case UVC_BUF_STATE_QUEUED:
 	case UVC_BUF_STATE_ACTIVE:
-	case UVC_BUF_STATE_READY:
 		v4l2_buf->flags |= V4L2_BUF_FLAG_QUEUED;
 		break;
 	case UVC_BUF_STATE_IDLE:
@@ -297,15 +295,13 @@ static int uvc_queue_waiton(struct uvc_buffer *buf, int nonblocking)
 {
 	if (nonblocking) {
 		return (buf->state != UVC_BUF_STATE_QUEUED &&
-			buf->state != UVC_BUF_STATE_ACTIVE &&
-			buf->state != UVC_BUF_STATE_READY)
+			buf->state != UVC_BUF_STATE_ACTIVE)
 			? 0 : -EAGAIN;
 	}
 
 	return wait_event_interruptible(buf->wait,
 		buf->state != UVC_BUF_STATE_QUEUED &&
-		buf->state != UVC_BUF_STATE_ACTIVE &&
-		buf->state != UVC_BUF_STATE_READY);
+		buf->state != UVC_BUF_STATE_ACTIVE);
 }
 
 /*
@@ -352,7 +348,6 @@ int uvc_dequeue_buffer(struct uvc_video_queue *queue,
 	case UVC_BUF_STATE_IDLE:
 	case UVC_BUF_STATE_QUEUED:
 	case UVC_BUF_STATE_ACTIVE:
-	case UVC_BUF_STATE_READY:
 	default:
 		uvc_trace(UVC_TRACE_CAPTURE, "[E] Invalid buffer state %u "
 			"(driver bug?).\n", buf->state);
@@ -389,12 +384,8 @@ unsigned int uvc_queue_poll(struct uvc_video_queue *queue, struct file *file,
 
 	poll_wait(file, &buf->wait, wait);
 	if (buf->state == UVC_BUF_STATE_DONE ||
-	    buf->state == UVC_BUF_STATE_ERROR) {
-		if (queue->type == V4L2_BUF_TYPE_VIDEO_CAPTURE)
-			mask |= POLLIN | POLLRDNORM;
-		else
-			mask |= POLLOUT | POLLWRNORM;
-	}
+	    buf->state == UVC_BUF_STATE_ERROR)
+		mask |= POLLIN | POLLRDNORM;
 
 done:
 	mutex_unlock(&queue->mutex);
@@ -409,7 +400,8 @@ done:
  * state can be properly initialized before buffers are accessed from the
  * interrupt handler.
  *
- * Enabling the video queue returns -EBUSY if the queue is already enabled.
+ * Enabling the video queue initializes parameters (such as sequence number,
+ * sync pattern, ...). If the queue is already enabled, return -EBUSY.
  *
  * Disabling the video queue cancels the queue and removes all buffers from
  * the main queue.
@@ -428,16 +420,15 @@ int uvc_queue_enable(struct uvc_video_queue *queue, int enable)
 			ret = -EBUSY;
 			goto done;
 		}
+		queue->sequence = 0;
 		queue->flags |= UVC_QUEUE_STREAMING;
 		queue->buf_used = 0;
 	} else {
 		uvc_queue_cancel(queue, 0);
 		INIT_LIST_HEAD(&queue->mainqueue);
 
-		for (i = 0; i < queue->count; ++i) {
-			queue->buffer[i].error = 0;
+		for (i = 0; i < queue->count; ++i)
 			queue->buffer[i].state = UVC_BUF_STATE_IDLE;
-		}
 
 		queue->flags &= ~UVC_QUEUE_STREAMING;
 	}
@@ -489,8 +480,8 @@ struct uvc_buffer *uvc_queue_next_buffer(struct uvc_video_queue *queue,
 	struct uvc_buffer *nextbuf;
 	unsigned long flags;
 
-	if ((queue->flags & UVC_QUEUE_DROP_CORRUPTED) && buf->error) {
-		buf->error = 0;
+	if ((queue->flags & UVC_QUEUE_DROP_INCOMPLETE) &&
+	    buf->buf.length != buf->buf.bytesused) {
 		buf->state = UVC_BUF_STATE_QUEUED;
 		buf->buf.bytesused = 0;
 		return buf;
@@ -498,14 +489,15 @@ struct uvc_buffer *uvc_queue_next_buffer(struct uvc_video_queue *queue,
 
 	spin_lock_irqsave(&queue->irqlock, flags);
 	list_del(&buf->queue);
-	buf->error = 0;
-	buf->state = UVC_BUF_STATE_DONE;
 	if (!list_empty(&queue->irqqueue))
 		nextbuf = list_first_entry(&queue->irqqueue, struct uvc_buffer,
 					   queue);
 	else
 		nextbuf = NULL;
 	spin_unlock_irqrestore(&queue->irqlock, flags);
+
+	buf->buf.sequence = queue->sequence++;
+	do_gettimeofday(&buf->buf.timestamp);
 
 	wake_up(&buf->wait);
 	return nextbuf;

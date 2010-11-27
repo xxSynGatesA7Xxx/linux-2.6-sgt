@@ -6,7 +6,6 @@
 #include <linux/moduleparam.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <linux/slab.h>
 
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_devinfo.h>
@@ -454,7 +453,7 @@ int scsi_get_device_flags(struct scsi_device *sdev,
 
 
 /**
- * scsi_get_device_flags_keyed - get device specific flags from the dynamic device list
+ * get_device_flags_keyed - get device specific flags from the dynamic device list.
  * @sdev:       &scsi_device to get flags for
  * @vendor:	vendor name
  * @model:	model name
@@ -685,7 +684,7 @@ MODULE_PARM_DESC(default_dev_flags,
 		 "scsi default device flag integer value");
 
 /**
- * scsi_exit_devinfo - remove /proc/scsi/device_info & the scsi_dev_info_list
+ * scsi_dev_info_list_delete - called from scsi.c:exit_scsi to remove the scsi_dev_info_list.
  **/
 void scsi_exit_devinfo(void)
 {

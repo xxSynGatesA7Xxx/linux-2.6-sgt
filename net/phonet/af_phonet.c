@@ -25,7 +25,6 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/slab.h>
 #include <asm/unaligned.h>
 #include <net/sock.h>
 
@@ -36,6 +35,7 @@
 
 /* Transport protocol registration */
 static struct phonet_protocol *proto_tab[PHONET_NPROTO] __read_mostly;
+static DEFINE_SPINLOCK(proto_tab_lock);
 
 static struct phonet_protocol *phonet_proto_get(int protocol)
 {
@@ -44,11 +44,11 @@ static struct phonet_protocol *phonet_proto_get(int protocol)
 	if (protocol >= PHONET_NPROTO)
 		return NULL;
 
-	rcu_read_lock();
-	pp = rcu_dereference(proto_tab[protocol]);
+	spin_lock(&proto_tab_lock);
+	pp = proto_tab[protocol];
 	if (pp && !try_module_get(pp->prot->owner))
 		pp = NULL;
-	rcu_read_unlock();
+	spin_unlock(&proto_tab_lock);
 
 	return pp;
 }
@@ -60,16 +60,15 @@ static inline void phonet_proto_put(struct phonet_protocol *pp)
 
 /* protocol family functions */
 
-static int pn_socket_create(struct net *net, struct socket *sock, int protocol,
-			    int kern)
+static int pn_socket_create(struct net *net, struct socket *sock, int protocol)
 {
 	struct sock *sk;
 	struct pn_sock *pn;
 	struct phonet_protocol *pnp;
 	int err;
 
-	if (!capable(CAP_SYS_ADMIN))
-		return -EPERM;
+//	if (!capable(CAP_SYS_ADMIN))
+//		return -EPERM;
 
 	if (protocol == 0) {
 		/* Default protocol selection */
@@ -119,7 +118,7 @@ out:
 	return err;
 }
 
-static const struct net_proto_family phonet_proto_family = {
+static struct net_proto_family phonet_proto_family = {
 	.family = PF_PHONET,
 	.create = pn_socket_create,
 	.owner = THIS_MODULE,
@@ -191,8 +190,9 @@ static int pn_send(struct sk_buff *skb, struct net_device *dev,
 	skb->priority = 0;
 	skb->dev = dev;
 
-	if (skb->pkt_type == PACKET_LOOPBACK) {
+	if (pn_addr(src) == pn_addr(dst)) {
 		skb_reset_mac_header(skb);
+		skb->pkt_type = PACKET_LOOPBACK;
 		skb_orphan(skb);
 		if (irq)
 			netif_rx(skb);
@@ -222,9 +222,6 @@ static int pn_raw_send(const void *data, int len, struct net_device *dev,
 	if (skb == NULL)
 		return -ENOMEM;
 
-	if (phonet_address_lookup(dev_net(dev), pn_addr(dst)) == 0)
-		skb->pkt_type = PACKET_LOOPBACK;
-
 	skb_reserve(skb, MAX_PHONET_HEADER);
 	__skb_put(skb, len);
 	skb_copy_to_linear_data(skb, data, len);
@@ -238,7 +235,6 @@ static int pn_raw_send(const void *data, int len, struct net_device *dev,
 int pn_skb_send(struct sock *sk, struct sk_buff *skb,
 		const struct sockaddr_pn *target)
 {
-	struct net *net = sock_net(sk);
 	struct net_device *dev;
 	struct pn_sock *pn = pn_sk(sk);
 	int err;
@@ -247,23 +243,9 @@ int pn_skb_send(struct sock *sk, struct sk_buff *skb,
 
 	err = -EHOSTUNREACH;
 	if (sk->sk_bound_dev_if)
-		dev = dev_get_by_index(net, sk->sk_bound_dev_if);
-	else if (phonet_address_lookup(net, daddr) == 0) {
-		dev = phonet_device_get(net);
-		skb->pkt_type = PACKET_LOOPBACK;
-	} else if (pn_sockaddr_get_object(target) == 0) {
-		/* Resource routing (small race until phonet_rcv()) */
-		struct sock *sk = pn_find_sock_by_res(net,
-							target->spn_resource);
-		if (sk)	{
-			sock_put(sk);
-			dev = phonet_device_get(net);
-			skb->pkt_type = PACKET_LOOPBACK;
-		} else
-			dev = phonet_route_output(net, daddr);
-	} else
-		dev = phonet_route_output(net, daddr);
-
+		dev = dev_get_by_index(sock_net(sk), sk->sk_bound_dev_if);
+	else
+		dev = phonet_device_get(sock_net(sk));
 	if (!dev || !(dev->flags & IFF_UP))
 		goto drop;
 
@@ -387,19 +369,6 @@ static int phonet_rcv(struct sk_buff *skb, struct net_device *dev,
 
 	pn_skb_get_dst_sockaddr(skb, &sa);
 
-	/* check if this is broadcasted */
-	if (pn_sockaddr_get_addr(&sa) == PNADDR_BROADCAST) {
-		pn_deliver_sock_broadcast(net, skb);
-		goto out;
-	}
-
-	/* resource routing */
-	if (pn_sockaddr_get_object(&sa) == 0) {
-		struct sock *sk = pn_find_sock_by_res(net, sa.spn_resource);
-		if (sk)
-			return sk_receive_skb(sk, skb, 0);
-	}
-
 	/* check if we are the destination */
 	if (phonet_address_lookup(net, pn_sockaddr_get_addr(&sa)) == 0) {
 		/* Phonet packet input */
@@ -407,43 +376,17 @@ static int phonet_rcv(struct sk_buff *skb, struct net_device *dev,
 
 		if (sk)
 			return sk_receive_skb(sk, skb, 0);
-
+		else {
+			// patch for VT call, do not response for un-opened socket resource
+			goto out;
+			// can never get this line
+		}
+#if 0		// do not make auto response
 		if (can_respond(skb)) {
 			send_obj_unreachable(skb);
 			send_reset_indications(skb);
 		}
-	} else if (unlikely(skb->pkt_type == PACKET_LOOPBACK))
-		goto out; /* Race between address deletion and loopback */
-	else {
-		/* Phonet packet routing */
-		struct net_device *out_dev;
-
-		out_dev = phonet_route_output(net, pn_sockaddr_get_addr(&sa));
-		if (!out_dev) {
-			LIMIT_NETDEBUG(KERN_WARNING"No Phonet route to %02X\n",
-					pn_sockaddr_get_addr(&sa));
-			goto out;
-		}
-
-		__skb_push(skb, sizeof(struct phonethdr));
-		skb->dev = out_dev;
-		if (out_dev == dev) {
-			LIMIT_NETDEBUG(KERN_ERR"Phonet loop to %02X on %s\n",
-					pn_sockaddr_get_addr(&sa), dev->name);
-			goto out_dev;
-		}
-		/* Some drivers (e.g. TUN) do not allocate HW header space */
-		if (skb_cow_head(skb, out_dev->hard_header_len))
-			goto out_dev;
-
-		if (dev_hard_header(skb, out_dev, ETH_P_PHONET, NULL, NULL,
-					skb->len) < 0)
-			goto out_dev;
-		dev_queue_xmit(skb);
-		dev_put(out_dev);
-		return NET_RX_SUCCESS;
-out_dev:
-		dev_put(out_dev);
+#endif		
 	}
 
 out:
@@ -455,8 +398,6 @@ static struct packet_type phonet_packet_type __read_mostly = {
 	.type = cpu_to_be16(ETH_P_PHONET),
 	.func = phonet_rcv,
 };
-
-static DEFINE_MUTEX(proto_tab_lock);
 
 int __init_or_module phonet_proto_register(int protocol,
 						struct phonet_protocol *pp)
@@ -470,12 +411,12 @@ int __init_or_module phonet_proto_register(int protocol,
 	if (err)
 		return err;
 
-	mutex_lock(&proto_tab_lock);
+	spin_lock(&proto_tab_lock);
 	if (proto_tab[protocol])
 		err = -EBUSY;
 	else
-		rcu_assign_pointer(proto_tab[protocol], pp);
-	mutex_unlock(&proto_tab_lock);
+		proto_tab[protocol] = pp;
+	spin_unlock(&proto_tab_lock);
 
 	return err;
 }
@@ -483,11 +424,10 @@ EXPORT_SYMBOL(phonet_proto_register);
 
 void phonet_proto_unregister(int protocol, struct phonet_protocol *pp)
 {
-	mutex_lock(&proto_tab_lock);
+	spin_lock(&proto_tab_lock);
 	BUG_ON(proto_tab[protocol] != pp);
-	rcu_assign_pointer(proto_tab[protocol], NULL);
-	mutex_unlock(&proto_tab_lock);
-	synchronize_rcu();
+	proto_tab[protocol] = NULL;
+	spin_unlock(&proto_tab_lock);
 	proto_unregister(pp->prot);
 }
 EXPORT_SYMBOL(phonet_proto_unregister);
@@ -501,7 +441,6 @@ static int __init phonet_init(void)
 	if (err)
 		return err;
 
-	pn_sock_init();
 	err = sock_register(&phonet_proto_family);
 	if (err) {
 		printk(KERN_ALERT

@@ -15,7 +15,6 @@
 #include <linux/spinlock.h>
 #include <linux/fs.h>
 #include <linux/proc_fs.h>
-#include <linux/sched.h>
 #include <linux/seq_file.h>
 #include <linux/device.h>
 #include <linux/pfn.h>
@@ -39,23 +38,6 @@ struct resource iomem_resource = {
 EXPORT_SYMBOL(iomem_resource);
 
 static DEFINE_RWLOCK(resource_lock);
-
-/*
- * By default, we allocate free space bottom-up.  The architecture can request
- * top-down by clearing this flag.  The user can override the architecture's
- * choice with the "resource_alloc_from_bottom" kernel boot option, but that
- * should only be a debugging tool.
- */
-int resource_alloc_from_bottom = 1;
-
-static __init int setup_alloc_from_bottom(char *s)
-{
-	printk(KERN_INFO
-	       "resource: allocating from bottom-up; please report a bug\n");
-	resource_alloc_from_bottom = 1;
-	return 0;
-}
-early_param("resource_alloc_from_bottom", setup_alloc_from_bottom);
 
 static void *r_next(struct seq_file *m, void *v, loff_t *pos)
 {
@@ -206,53 +188,6 @@ static int __release_resource(struct resource *old)
 	return -EINVAL;
 }
 
-static void __release_child_resources(struct resource *r)
-{
-	struct resource *tmp, *p;
-	resource_size_t size;
-
-	p = r->child;
-	r->child = NULL;
-	while (p) {
-		tmp = p;
-		p = p->sibling;
-
-		tmp->parent = NULL;
-		tmp->sibling = NULL;
-		__release_child_resources(tmp);
-
-		printk(KERN_DEBUG "release child resource %pR\n", tmp);
-		/* need to restore size, and keep flags */
-		size = resource_size(tmp);
-		tmp->start = 0;
-		tmp->end = size - 1;
-	}
-}
-
-void release_child_resources(struct resource *r)
-{
-	write_lock(&resource_lock);
-	__release_child_resources(r);
-	write_unlock(&resource_lock);
-}
-
-/**
- * request_resource_conflict - request and reserve an I/O or memory resource
- * @root: root resource descriptor
- * @new: resource descriptor desired by caller
- *
- * Returns 0 for success, conflict resource on error.
- */
-struct resource *request_resource_conflict(struct resource *root, struct resource *new)
-{
-	struct resource *conflict;
-
-	write_lock(&resource_lock);
-	conflict = __request_resource(root, new);
-	write_unlock(&resource_lock);
-	return conflict;
-}
-
 /**
  * request_resource - request and reserve an I/O or memory resource
  * @root: root resource descriptor
@@ -264,7 +199,9 @@ int request_resource(struct resource *root, struct resource *new)
 {
 	struct resource *conflict;
 
-	conflict = request_resource_conflict(root, new);
+	write_lock(&resource_lock);
+	conflict = __request_resource(root, new);
+	write_unlock(&resource_lock);
 	return conflict ? -EBUSY : 0;
 }
 
@@ -337,7 +274,7 @@ int walk_system_ram_range(unsigned long start_pfn, unsigned long nr_pages,
 		void *arg, int (*func)(unsigned long, unsigned long, void *))
 {
 	struct resource res;
-	unsigned long pfn, end_pfn;
+	unsigned long pfn, len;
 	u64 orig_end;
 	int ret = -1;
 
@@ -347,10 +284,9 @@ int walk_system_ram_range(unsigned long start_pfn, unsigned long nr_pages,
 	orig_end = res.end;
 	while ((res.start < res.end) &&
 		(find_next_system_ram(&res, "System RAM") >= 0)) {
-		pfn = (res.start + PAGE_SIZE - 1) >> PAGE_SHIFT;
-		end_pfn = (res.end + 1) >> PAGE_SHIFT;
-		if (end_pfn > pfn)
-			ret = (*func)(pfn, end_pfn - pfn, arg);
+		pfn = (unsigned long)(res.start >> PAGE_SHIFT);
+		len = (unsigned long)((res.end + 1 - res.start) >> PAGE_SHIFT);
+		ret = (*func)(pfn, len, arg);
 		if (ret)
 			break;
 		res.start = res.end + 1;
@@ -361,159 +297,46 @@ int walk_system_ram_range(unsigned long start_pfn, unsigned long nr_pages,
 
 #endif
 
-static int __is_ram(unsigned long pfn, unsigned long nr_pages, void *arg)
-{
-	return 1;
-}
-/*
- * This generic page_is_ram() returns true if specified address is
- * registered as "System RAM" in iomem_resource list.
- */
-int __weak page_is_ram(unsigned long pfn)
-{
-	return walk_system_ram_range(pfn, 1, NULL, __is_ram) == 1;
-}
-
-static resource_size_t simple_align_resource(void *data,
-					     const struct resource *avail,
-					     resource_size_t size,
-					     resource_size_t align)
-{
-	return avail->start;
-}
-
-static void resource_clip(struct resource *res, resource_size_t min,
-			  resource_size_t max)
-{
-	if (res->start < min)
-		res->start = min;
-	if (res->end > max)
-		res->end = max;
-}
-
-static bool resource_contains(struct resource *res1, struct resource *res2)
-{
-	return res1->start <= res2->start && res1->end >= res2->end;
-}
-
-/*
- * Find the resource before "child" in the sibling list of "root" children.
- */
-static struct resource *find_sibling_prev(struct resource *root, struct resource *child)
-{
-	struct resource *this;
-
-	for (this = root->child; this; this = this->sibling)
-		if (this->sibling == child)
-			return this;
-
-	return NULL;
-}
-
 /*
  * Find empty slot in the resource tree given range and alignment.
- * This version allocates from the end of the root resource first.
- */
-static int find_resource_from_top(struct resource *root, struct resource *new,
-				  resource_size_t size, resource_size_t min,
-				  resource_size_t max, resource_size_t align,
-				  resource_size_t (*alignf)(void *,
-						   const struct resource *,
-						   resource_size_t,
-						   resource_size_t),
-				  void *alignf_data)
-{
-	struct resource *this;
-	struct resource tmp, avail, alloc;
-
-	tmp.start = root->end;
-	tmp.end = root->end;
-
-	this = find_sibling_prev(root, NULL);
-	for (;;) {
-		if (this) {
-			if (this->end < root->end)
-				tmp.start = this->end + 1;
-		} else
-			tmp.start = root->start;
-
-		resource_clip(&tmp, min, max);
-
-		/* Check for overflow after ALIGN() */
-		avail = *new;
-		avail.start = ALIGN(tmp.start, align);
-		avail.end = tmp.end;
-		if (avail.start >= tmp.start) {
-			alloc.start = alignf(alignf_data, &avail, size, align);
-			alloc.end = alloc.start + size - 1;
-			if (resource_contains(&avail, &alloc)) {
-				new->start = alloc.start;
-				new->end = alloc.end;
-				return 0;
-			}
-		}
-
-		if (!this || this->start == root->start)
-			break;
-
-		tmp.end = this->start - 1;
-		this = find_sibling_prev(root, this);
-	}
-	return -EBUSY;
-}
-
-/*
- * Find empty slot in the resource tree given range and alignment.
- * This version allocates from the beginning of the root resource first.
  */
 static int find_resource(struct resource *root, struct resource *new,
 			 resource_size_t size, resource_size_t min,
 			 resource_size_t max, resource_size_t align,
-			 resource_size_t (*alignf)(void *,
-						   const struct resource *,
-						   resource_size_t,
-						   resource_size_t),
+			 void (*alignf)(void *, struct resource *,
+					resource_size_t, resource_size_t),
 			 void *alignf_data)
 {
 	struct resource *this = root->child;
-	struct resource tmp = *new, avail, alloc;
 
-	tmp.start = root->start;
+	new->start = root->start;
 	/*
-	 * Skip past an allocated resource that starts at 0, since the
-	 * assignment of this->start - 1 to tmp->end below would cause an
-	 * underflow.
+	 * Skip past an allocated resource that starts at 0, since the assignment
+	 * of this->start - 1 to new->end below would cause an underflow.
 	 */
 	if (this && this->start == 0) {
-		tmp.start = this->end + 1;
+		new->start = this->end + 1;
 		this = this->sibling;
 	}
-	for (;;) {
+	for(;;) {
 		if (this)
-			tmp.end = this->start - 1;
+			new->end = this->start - 1;
 		else
-			tmp.end = root->end;
-
-		resource_clip(&tmp, min, max);
-
-		/* Check for overflow after ALIGN() */
-		avail = *new;
-		avail.start = ALIGN(tmp.start, align);
-		avail.end = tmp.end;
-		if (avail.start >= tmp.start) {
-			alloc.start = alignf(alignf_data, &avail, size, align);
-			alloc.end = alloc.start + size - 1;
-			if (resource_contains(&avail, &alloc)) {
-				new->start = alloc.start;
-				new->end = alloc.end;
-				return 0;
-			}
+			new->end = root->end;
+		if (new->start < min)
+			new->start = min;
+		if (new->end > max)
+			new->end = max;
+		new->start = ALIGN(new->start, align);
+		if (alignf)
+			alignf(alignf_data, new, size, align);
+		if (new->start < new->end && new->end - new->start >= size - 1) {
+			new->end = new->start + size - 1;
+			return 0;
 		}
-
 		if (!this)
 			break;
-
-		tmp.start = this->end + 1;
+		new->start = this->end + 1;
 		this = this->sibling;
 	}
 	return -EBUSY;
@@ -533,22 +356,14 @@ static int find_resource(struct resource *root, struct resource *new,
 int allocate_resource(struct resource *root, struct resource *new,
 		      resource_size_t size, resource_size_t min,
 		      resource_size_t max, resource_size_t align,
-		      resource_size_t (*alignf)(void *,
-						const struct resource *,
-						resource_size_t,
-						resource_size_t),
+		      void (*alignf)(void *, struct resource *,
+				     resource_size_t, resource_size_t),
 		      void *alignf_data)
 {
 	int err;
 
-	if (!alignf)
-		alignf = simple_align_resource;
-
 	write_lock(&resource_lock);
-	if (resource_alloc_from_bottom)
-		err = find_resource(root, new, size, min, max, align, alignf, alignf_data);
-	else
-		err = find_resource_from_top(root, new, size, min, max, align, alignf, alignf_data);
+	err = find_resource(root, new, size, min, max, align, alignf, alignf_data);
 	if (err >= 0 && __request_resource(root, new))
 		err = -EBUSY;
 	write_unlock(&resource_lock);
@@ -571,8 +386,6 @@ static struct resource * __insert_resource(struct resource *parent, struct resou
 			return first;
 
 		if (first == parent)
-			return first;
-		if (WARN_ON(first == new))	/* duplicated insertion */
 			return first;
 
 		if ((first->start > new->start) || (first->end < new->end))
@@ -611,40 +424,25 @@ static struct resource * __insert_resource(struct resource *parent, struct resou
 }
 
 /**
- * insert_resource_conflict - Inserts resource in the resource tree
+ * insert_resource - Inserts a resource in the resource tree
  * @parent: parent of the new resource
  * @new: new resource to insert
  *
- * Returns 0 on success, conflict resource if the resource can't be inserted.
+ * Returns 0 on success, -EBUSY if the resource can't be inserted.
  *
- * This function is equivalent to request_resource_conflict when no conflict
+ * This function is equivalent to request_resource when no conflict
  * happens. If a conflict happens, and the conflicting resources
  * entirely fit within the range of the new resource, then the new
  * resource is inserted and the conflicting resources become children of
  * the new resource.
  */
-struct resource *insert_resource_conflict(struct resource *parent, struct resource *new)
+int insert_resource(struct resource *parent, struct resource *new)
 {
 	struct resource *conflict;
 
 	write_lock(&resource_lock);
 	conflict = __insert_resource(parent, new);
 	write_unlock(&resource_lock);
-	return conflict;
-}
-
-/**
- * insert_resource - Inserts a resource in the resource tree
- * @parent: parent of the new resource
- * @new: new resource to insert
- *
- * Returns 0 on success, -EBUSY if the resource can't be inserted.
- */
-int insert_resource(struct resource *parent, struct resource *new)
-{
-	struct resource *conflict;
-
-	conflict = insert_resource_conflict(parent, new);
 	return conflict ? -EBUSY : 0;
 }
 
@@ -803,8 +601,6 @@ resource_size_t resource_alignment(struct resource *res)
  * release_region releases a matching busy region.
  */
 
-static DECLARE_WAIT_QUEUE_HEAD(muxed_resource_wait);
-
 /**
  * __request_region - create a new busy resource region
  * @parent: parent resource descriptor
@@ -817,7 +613,6 @@ struct resource * __request_region(struct resource *parent,
 				   resource_size_t start, resource_size_t n,
 				   const char *name, int flags)
 {
-	DECLARE_WAITQUEUE(wait, current);
 	struct resource *res = kzalloc(sizeof(*res), GFP_KERNEL);
 
 	if (!res)
@@ -842,15 +637,7 @@ struct resource * __request_region(struct resource *parent,
 			if (!(conflict->flags & IORESOURCE_BUSY))
 				continue;
 		}
-		if (conflict->flags & flags & IORESOURCE_MUXED) {
-			add_wait_queue(&muxed_resource_wait, &wait);
-			write_unlock(&resource_lock);
-			set_current_state(TASK_UNINTERRUPTIBLE);
-			schedule();
-			remove_wait_queue(&muxed_resource_wait, &wait);
-			write_lock(&resource_lock);
-			continue;
-		}
+
 		/* Uhhuh, that didn't work out.. */
 		kfree(res);
 		res = NULL;
@@ -924,8 +711,6 @@ void __release_region(struct resource *parent, resource_size_t start,
 				break;
 			*p = res->sibling;
 			write_unlock(&resource_lock);
-			if (res->flags & IORESOURCE_MUXED)
-				wake_up(&muxed_resource_wait);
 			kfree(res);
 			return;
 		}

@@ -27,6 +27,9 @@
 #define OFFS_CON	(0x00)
 #define OFFS_DAT	(0x04)
 #define OFFS_UP		(0x08)
+#define OFFS_DRV	(0x0C)
+#define OFFS_CONPDN	(0x10)
+#define OFFS_PUDPDN	(0x14)
 
 static void s3c_gpio_pm_1bit_save(struct s3c_gpio_chip *chip)
 {
@@ -192,12 +195,15 @@ struct s3c_gpio_pm s3c_gpio_pm_2bit = {
 	.resume = s3c_gpio_pm_2bit_resume,
 };
 
-#if defined(CONFIG_ARCH_S3C64XX) || defined(CONFIG_PLAT_S5P)
+#if defined(CONFIG_ARCH_S3C64XX) || defined(CONFIG_ARCH_S5PV210)
 static void s3c_gpio_pm_4bit_save(struct s3c_gpio_chip *chip)
 {
 	chip->pm_save[1] = __raw_readl(chip->base + OFFS_CON);
 	chip->pm_save[2] = __raw_readl(chip->base + OFFS_DAT);
 	chip->pm_save[3] = __raw_readl(chip->base + OFFS_UP);
+	chip->pm_save[4] = __raw_readl(chip->base + OFFS_DRV);
+	chip->pm_save[5] = __raw_readl(chip->base + OFFS_CONPDN);
+	chip->pm_save[6] = __raw_readl(chip->base + OFFS_PUDPDN);
 
 	if (chip->chip.ngpio > 8)
 		chip->pm_save[0] = __raw_readl(chip->base - 4);
@@ -284,7 +290,10 @@ static void s3c_gpio_pm_4bit_resume(struct s3c_gpio_chip *chip)
 
 	__raw_writel(chip->pm_save[2], base + OFFS_DAT);
 	__raw_writel(chip->pm_save[3], base + OFFS_UP);
-
+	__raw_writel(chip->pm_save[4], base + OFFS_DRV);
+	__raw_writel(chip->pm_save[5], base + OFFS_CONPDN);
+	__raw_writel(chip->pm_save[6], base + OFFS_PUDPDN);
+#if 0
 	if (chip->chip.ngpio > 8) {
 		S3C_PMDBG("%s: CON4 %08x,%08x => %08x,%08x, DAT %08x => %08x\n",
 			  chip->chip.label, old_gpcon[0], old_gpcon[1],
@@ -296,13 +305,14 @@ static void s3c_gpio_pm_4bit_resume(struct s3c_gpio_chip *chip)
 			  chip->chip.label, old_gpcon[1],
 			  __raw_readl(base + OFFS_CON),
 			  old_gpdat, gps_gpdat);
+#endif
 }
 
 struct s3c_gpio_pm s3c_gpio_pm_4bit = {
 	.save	= s3c_gpio_pm_4bit_save,
 	.resume = s3c_gpio_pm_4bit_resume,
 };
-#endif /* CONFIG_ARCH_S3C64XX || CONFIG_PLAT_S5P */
+#endif /* CONFIG_ARCH_S3C64XX */
 
 /**
  * s3c_pm_save_gpio() - save gpio chip data for suspend
@@ -329,22 +339,20 @@ void s3c_pm_save_gpios(void)
 	struct s3c_gpio_chip *ourchip;
 	unsigned int gpio_nr;
 
-	for (gpio_nr = 0; gpio_nr < S3C_GPIO_END;) {
+	for (gpio_nr = 0; gpio_nr < S3C_GPIO_END; gpio_nr++) {
 		ourchip = s3c_gpiolib_getchip(gpio_nr);
-		if (!ourchip) {
-			gpio_nr++;
+		if (!ourchip)
 			continue;
-		}
 
 		s3c_pm_save_gpio(ourchip);
-
+#if 0
 		S3C_PMDBG("%s: save %08x,%08x,%08x,%08x\n",
 			  ourchip->chip.label,
 			  ourchip->pm_save[0],
 			  ourchip->pm_save[1],
 			  ourchip->pm_save[2],
 			  ourchip->pm_save[3]);
-
+#endif
 		gpio_nr += ourchip->chip.ngpio;
 		gpio_nr += CONFIG_S3C_GPIO_SPACE;
 	}
@@ -369,12 +377,10 @@ void s3c_pm_restore_gpios(void)
 	struct s3c_gpio_chip *ourchip;
 	unsigned int gpio_nr;
 
-	for (gpio_nr = 0; gpio_nr < S3C_GPIO_END;) {
+	for (gpio_nr = 0; gpio_nr < S3C_GPIO_END; gpio_nr++) {
 		ourchip = s3c_gpiolib_getchip(gpio_nr);
-		if (!ourchip) {
-			gpio_nr++;
+		if (!ourchip)
 			continue;
-		}
 
 		s3c_pm_resume_gpio(ourchip);
 

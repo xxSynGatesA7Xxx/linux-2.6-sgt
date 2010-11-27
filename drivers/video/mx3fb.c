@@ -27,7 +27,6 @@
 #include <linux/clk.h>
 #include <linux/mutex.h>
 
-#include <mach/dma.h>
 #include <mach/hardware.h>
 #include <mach/ipu.h>
 #include <mach/mx3fb.h>
@@ -388,8 +387,7 @@ static void sdc_disable_channel(struct mx3fb_info *mx3_fbi)
 
 	spin_unlock_irqrestore(&mx3fb->lock, flags);
 
-	mx3_fbi->txd->chan->device->device_control(mx3_fbi->txd->chan,
-						   DMA_TERMINATE_ALL, 0);
+	mx3_fbi->txd->chan->device->device_terminate_all(mx3_fbi->txd->chan);
 	mx3_fbi->txd = NULL;
 	mx3_fbi->cookie = -EINVAL;
 }
@@ -1420,9 +1418,6 @@ static bool chan_filter(struct dma_chan *chan, void *arg)
 	struct dma_chan_request *rq = arg;
 	struct device *dev;
 	struct mx3fb_platform_data *mx3fb_pdata;
-
-	if (!imx_dma_is_ipu(chan))
-		return false;
 
 	if (!rq)
 		return false;

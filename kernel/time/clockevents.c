@@ -30,7 +30,7 @@ static LIST_HEAD(clockevents_released);
 static RAW_NOTIFIER_HEAD(clockevents_chain);
 
 /* Protection for the above */
-static DEFINE_RAW_SPINLOCK(clockevents_lock);
+static DEFINE_SPINLOCK(clockevents_lock);
 
 /**
  * clockevents_delta2ns - Convert a latch value (device ticks) to nanoseconds
@@ -39,9 +39,10 @@ static DEFINE_RAW_SPINLOCK(clockevents_lock);
  *
  * Math helper, returns latch value converted to nanoseconds (bound checked)
  */
-u64 clockevent_delta2ns(unsigned long latch, struct clock_event_device *evt)
+unsigned long clockevent_delta2ns(unsigned long latch,
+				  struct clock_event_device *evt)
 {
-	u64 clc = (u64) latch << evt->shift;
+	u64 clc = ((u64) latch << evt->shift);
 
 	if (unlikely(!evt->mult)) {
 		evt->mult = 1;
@@ -51,10 +52,10 @@ u64 clockevent_delta2ns(unsigned long latch, struct clock_event_device *evt)
 	do_div(clc, evt->mult);
 	if (clc < 1000)
 		clc = 1000;
-	if (clc > KTIME_MAX)
-		clc = KTIME_MAX;
+	if (clc > LONG_MAX)
+		clc = LONG_MAX;
 
-	return clc;
+	return (unsigned long) clc;
 }
 EXPORT_SYMBOL_GPL(clockevent_delta2ns);
 
@@ -141,9 +142,9 @@ int clockevents_register_notifier(struct notifier_block *nb)
 	unsigned long flags;
 	int ret;
 
-	raw_spin_lock_irqsave(&clockevents_lock, flags);
+	spin_lock_irqsave(&clockevents_lock, flags);
 	ret = raw_notifier_chain_register(&clockevents_chain, nb);
-	raw_spin_unlock_irqrestore(&clockevents_lock, flags);
+	spin_unlock_irqrestore(&clockevents_lock, flags);
 
 	return ret;
 }
@@ -185,13 +186,13 @@ void clockevents_register_device(struct clock_event_device *dev)
 	BUG_ON(dev->mode != CLOCK_EVT_MODE_UNUSED);
 	BUG_ON(!dev->cpumask);
 
-	raw_spin_lock_irqsave(&clockevents_lock, flags);
+	spin_lock_irqsave(&clockevents_lock, flags);
 
 	list_add(&dev->list, &clockevent_devices);
 	clockevents_do_notify(CLOCK_EVT_NOTIFY_ADD, dev);
 	clockevents_notify_released();
 
-	raw_spin_unlock_irqrestore(&clockevents_lock, flags);
+	spin_unlock_irqrestore(&clockevents_lock, flags);
 }
 EXPORT_SYMBOL_GPL(clockevents_register_device);
 
@@ -242,7 +243,7 @@ void clockevents_notify(unsigned long reason, void *arg)
 	unsigned long flags;
 	int cpu;
 
-	raw_spin_lock_irqsave(&clockevents_lock, flags);
+	spin_lock_irqsave(&clockevents_lock, flags);
 	clockevents_do_notify(reason, arg);
 
 	switch (reason) {
@@ -269,7 +270,7 @@ void clockevents_notify(unsigned long reason, void *arg)
 	default:
 		break;
 	}
-	raw_spin_unlock_irqrestore(&clockevents_lock, flags);
+	spin_unlock_irqrestore(&clockevents_lock, flags);
 }
 EXPORT_SYMBOL_GPL(clockevents_notify);
 #endif

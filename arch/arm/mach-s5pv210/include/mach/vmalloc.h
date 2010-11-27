@@ -17,6 +17,10 @@
 #ifndef __ASM_ARCH_VMALLOC_H
 #define __ASM_ARCH_VMALLOC_H __FILE__
 
-#define VMALLOC_END	0xF6000000UL
+#if defined (CONFIG_DDR_CONFIG_4G)
+#define VMALLOC_END	  (0xFA000000)
+#else
+#define VMALLOC_END	  (0xF3000000)
+#endif
 
 #endif /* __ASM_ARCH_VMALLOC_H */

@@ -2,7 +2,7 @@
  * max6650.c - Part of lm_sensors, Linux kernel modules for hardware
  *             monitoring.
  *
- * (C) 2007 by Hans J. Koch <hjk@hansjkoch.de>
+ * (C) 2007 by Hans J. Koch <hjk@linutronix.de>
  *
  * based on code written by John Morris <john.morris@spirentcom.com>
  * Copyright (c) 2003 Spirent Communications
@@ -62,6 +62,8 @@ module_param(fan_voltage, int, S_IRUGO);
 module_param(prescaler, int, S_IRUGO);
 module_param(clock, int, S_IRUGO);
 
+I2C_CLIENT_INSMOD_1(max6650);
+
 /*
  * MAX 6650/6651 registers
  */
@@ -114,7 +116,7 @@ module_param(clock, int, S_IRUGO);
 
 static int max6650_probe(struct i2c_client *client,
 			 const struct i2c_device_id *id);
-static int max6650_detect(struct i2c_client *client,
+static int max6650_detect(struct i2c_client *client, int kind,
 			  struct i2c_board_info *info);
 static int max6650_init_client(struct i2c_client *client);
 static int max6650_remove(struct i2c_client *client);
@@ -125,7 +127,7 @@ static struct max6650_data *max6650_update_device(struct device *dev);
  */
 
 static const struct i2c_device_id max6650_id[] = {
-	{ "max6650", 0 },
+	{ "max6650", max6650 },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, max6650_id);
@@ -139,7 +141,7 @@ static struct i2c_driver max6650_driver = {
 	.remove		= max6650_remove,
 	.id_table	= max6650_id,
 	.detect		= max6650_detect,
-	.address_list	= normal_i2c,
+	.address_data	= &addr_data,
 };
 
 /*
@@ -526,13 +528,13 @@ static struct attribute_group max6650_attr_grp = {
  */
 
 /* Return 0 if detection is successful, -ENODEV otherwise */
-static int max6650_detect(struct i2c_client *client,
+static int max6650_detect(struct i2c_client *client, int kind,
 			  struct i2c_board_info *info)
 {
 	struct i2c_adapter *adapter = client->adapter;
 	int address = client->addr;
 
-	dev_dbg(&adapter->dev, "max6650_detect called\n");
+	dev_dbg(&adapter->dev, "max6650_detect called, kind = %d\n", kind);
 
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_BYTE_DATA)) {
 		dev_dbg(&adapter->dev, "max6650: I2C bus doesn't support "
@@ -540,7 +542,23 @@ static int max6650_detect(struct i2c_client *client,
 		return -ENODEV;
 	}
 
-	if (((i2c_smbus_read_byte_data(client, MAX6650_REG_CONFIG) & 0xC0)
+	/*
+	 * Now we do the remaining detection. A negative kind means that
+	 * the driver was loaded with no force parameter (default), so we
+	 * must both detect and identify the chip (actually there is only
+	 * one possible kind of chip for now, max6650). A zero kind means that
+	 * the driver was loaded with the force parameter, the detection
+	 * step shall be skipped. A positive kind means that the driver
+	 * was loaded with the force parameter and a given kind of chip is
+	 * requested, so both the detection and the identification steps
+	 * are skipped.
+	 *
+	 * Currently I can find no way to distinguish between a MAX6650 and
+	 * a MAX6651. This driver has only been tried on the former.
+	 */
+
+	if ((kind < 0) &&
+	   (  (i2c_smbus_read_byte_data(client, MAX6650_REG_CONFIG) & 0xC0)
 	    ||(i2c_smbus_read_byte_data(client, MAX6650_REG_GPIO_STAT) & 0xE0)
 	    ||(i2c_smbus_read_byte_data(client, MAX6650_REG_ALARM_EN) & 0xE0)
 	    ||(i2c_smbus_read_byte_data(client, MAX6650_REG_ALARM) & 0xE0)

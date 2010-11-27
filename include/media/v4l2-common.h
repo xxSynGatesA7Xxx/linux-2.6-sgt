@@ -85,13 +85,13 @@
 struct v4l2_prio_state {
 	atomic_t prios[4];
 };
-void v4l2_prio_init(struct v4l2_prio_state *global);
+int v4l2_prio_init(struct v4l2_prio_state *global);
 int v4l2_prio_change(struct v4l2_prio_state *global, enum v4l2_priority *local,
 		     enum v4l2_priority new);
-void v4l2_prio_open(struct v4l2_prio_state *global, enum v4l2_priority *local);
-void v4l2_prio_close(struct v4l2_prio_state *global, enum v4l2_priority local);
+int v4l2_prio_open(struct v4l2_prio_state *global, enum v4l2_priority *local);
+int v4l2_prio_close(struct v4l2_prio_state *global, enum v4l2_priority *local);
 enum v4l2_priority v4l2_prio_max(struct v4l2_prio_state *global);
-int v4l2_prio_check(struct v4l2_prio_state *global, enum v4l2_priority local);
+int v4l2_prio_check(struct v4l2_prio_state *global, enum v4l2_priority *local);
 
 /* ------------------------------------------------------------------------- */
 
@@ -184,25 +184,6 @@ const unsigned short *v4l2_i2c_tuner_addrs(enum v4l2_i2c_tuner_type type);
 
 /* ------------------------------------------------------------------------- */
 
-/* SPI Helper functions */
-#if defined(CONFIG_SPI)
-
-#include <linux/spi/spi.h>
-
-struct spi_device;
-
-/* Load an spi module and return an initialized v4l2_subdev struct.
-   The client_type argument is the name of the chip that's on the adapter. */
-struct v4l2_subdev *v4l2_spi_new_subdev(struct v4l2_device *v4l2_dev,
-		struct spi_master *master, struct spi_board_info *info);
-
-/* Initialize an v4l2_subdev with data from an spi_device struct */
-void v4l2_spi_subdev_init(struct v4l2_subdev *sd, struct spi_device *spi,
-		const struct v4l2_subdev_ops *ops);
-#endif
-
-/* ------------------------------------------------------------------------- */
-
 /* Note: these remaining ioctls/structs should be removed as well, but they are
    still used in tuner-simple.c (TUNER_SET_CONFIG), cx18/ivtv (RESET) and
    v4l2-int-device.h (v4l2_routing). To remove these ioctls some more cleanup
@@ -231,15 +212,5 @@ void v4l_bound_align_image(unsigned int *w, unsigned int wmin,
 			   unsigned int *h, unsigned int hmin,
 			   unsigned int hmax, unsigned int halign,
 			   unsigned int salign);
-int v4l_fill_dv_preset_info(u32 preset, struct v4l2_dv_enum_preset *info);
-
-struct v4l2_discrete_probe {
-	const struct v4l2_frmsize_discrete	*sizes;
-	int					num_sizes;
-};
-
-const struct v4l2_frmsize_discrete *v4l2_find_nearest_format(
-		const struct v4l2_discrete_probe *probe,
-		s32 width, s32 height);
 
 #endif /* V4L2_COMMON_H_ */

@@ -14,8 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include "hw.h"
-#include "ar9002_phy.h"
+#include "ath9k.h"
 
 static int ath9k_hw_4k_get_eeprom_ver(struct ath_hw *ah)
 {
@@ -30,21 +29,20 @@ static int ath9k_hw_4k_get_eeprom_rev(struct ath_hw *ah)
 static bool ath9k_hw_4k_fill_eeprom(struct ath_hw *ah)
 {
 #define SIZE_EEPROM_4K (sizeof(struct ar5416_eeprom_4k) / sizeof(u16))
-	struct ath_common *common = ath9k_hw_common(ah);
 	u16 *eep_data = (u16 *)&ah->eeprom.map4k;
 	int addr, eep_start_loc = 0;
 
 	eep_start_loc = 64;
 
 	if (!ath9k_hw_use_flash(ah)) {
-		ath_print(common, ATH_DBG_EEPROM,
-			  "Reading from EEPROM, not flash\n");
+		DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
+			"Reading from EEPROM, not flash\n");
 	}
 
 	for (addr = 0; addr < SIZE_EEPROM_4K; addr++) {
-		if (!ath9k_hw_nvram_read(common, addr + eep_start_loc, eep_data)) {
-			ath_print(common, ATH_DBG_EEPROM,
-				  "Unable to read eeprom region\n");
+		if (!ath9k_hw_nvram_read(ah, addr + eep_start_loc, eep_data)) {
+			DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
+			       "Unable to read eeprom region \n");
 			return false;
 		}
 		eep_data++;
@@ -57,7 +55,6 @@ static bool ath9k_hw_4k_fill_eeprom(struct ath_hw *ah)
 static int ath9k_hw_4k_check_eeprom(struct ath_hw *ah)
 {
 #define EEPROM_4K_SIZE (sizeof(struct ar5416_eeprom_4k) / sizeof(u16))
-	struct ath_common *common = ath9k_hw_common(ah);
 	struct ar5416_eeprom_4k *eep =
 		(struct ar5416_eeprom_4k *) &ah->eeprom.map4k;
 	u16 *eepdata, temp, magic, magic2;
@@ -67,15 +64,15 @@ static int ath9k_hw_4k_check_eeprom(struct ath_hw *ah)
 
 
 	if (!ath9k_hw_use_flash(ah)) {
-		if (!ath9k_hw_nvram_read(common, AR5416_EEPROM_MAGIC_OFFSET,
+		if (!ath9k_hw_nvram_read(ah, AR5416_EEPROM_MAGIC_OFFSET,
 					 &magic)) {
-			ath_print(common, ATH_DBG_FATAL,
-				  "Reading Magic # failed\n");
+			DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+				"Reading Magic # failed\n");
 			return false;
 		}
 
-		ath_print(common, ATH_DBG_EEPROM,
-			  "Read Magic = 0x%04X\n", magic);
+		DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
+			"Read Magic = 0x%04X\n", magic);
 
 		if (magic != AR5416_EEPROM_MAGIC) {
 			magic2 = swab16(magic);
@@ -90,16 +87,16 @@ static int ath9k_hw_4k_check_eeprom(struct ath_hw *ah)
 					eepdata++;
 				}
 			} else {
-				ath_print(common, ATH_DBG_FATAL,
-					  "Invalid EEPROM Magic. "
-					  "endianness mismatch.\n");
+				DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+					"Invalid EEPROM Magic. "
+					"endianness mismatch.\n");
 				return -EINVAL;
 			}
 		}
 	}
 
-	ath_print(common, ATH_DBG_EEPROM, "need_swap = %s.\n",
-		  need_swap ? "True" : "False");
+	DPRINTF(ah->ah_sc, ATH_DBG_EEPROM, "need_swap = %s.\n",
+		need_swap ? "True" : "False");
 
 	if (need_swap)
 		el = swab16(ah->eeprom.map4k.baseEepHeader.length);
@@ -120,8 +117,8 @@ static int ath9k_hw_4k_check_eeprom(struct ath_hw *ah)
 		u32 integer;
 		u16 word;
 
-		ath_print(common, ATH_DBG_EEPROM,
-			  "EEPROM Endianness is not native.. Changing\n");
+		DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
+			"EEPROM Endianness is not native.. Changing\n");
 
 		word = swab16(eep->baseEepHeader.length);
 		eep->baseEepHeader.length = word;
@@ -163,9 +160,9 @@ static int ath9k_hw_4k_check_eeprom(struct ath_hw *ah)
 
 	if (sum != 0xffff || ah->eep_ops->get_eeprom_ver(ah) != AR5416_EEP_VER ||
 	    ah->eep_ops->get_eeprom_rev(ah) < AR5416_EEP_NO_BACK_VER) {
-		ath_print(common, ATH_DBG_FATAL,
-			  "Bad EEPROM checksum 0x%x or revision 0x%04x\n",
-			  sum, ah->eep_ops->get_eeprom_ver(ah));
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+			"Bad EEPROM checksum 0x%x or revision 0x%04x\n",
+			sum, ah->eep_ops->get_eeprom_ver(ah));
 		return -EINVAL;
 	}
 
@@ -179,18 +176,15 @@ static u32 ath9k_hw_4k_get_eeprom(struct ath_hw *ah,
 	struct ar5416_eeprom_4k *eep = &ah->eeprom.map4k;
 	struct modal_eep_4k_header *pModal = &eep->modalHeader;
 	struct base_eep_header_4k *pBase = &eep->baseEepHeader;
-	u16 ver_minor;
-
-	ver_minor = pBase->version & AR5416_EEP_VER_MINOR_MASK;
 
 	switch (param) {
 	case EEP_NFTHRESH_2:
 		return pModal->noiseFloorThreshCh[0];
-	case EEP_MAC_LSW:
+	case AR_EEPROM_MAC(0):
 		return pBase->macAddr[0] << 8 | pBase->macAddr[1];
-	case EEP_MAC_MID:
+	case AR_EEPROM_MAC(1):
 		return pBase->macAddr[2] << 8 | pBase->macAddr[3];
-	case EEP_MAC_MSW:
+	case AR_EEPROM_MAC(2):
 		return pBase->macAddr[4] << 8 | pBase->macAddr[5];
 	case EEP_REG_0:
 		return pBase->regDmn[0];
@@ -207,24 +201,13 @@ static u32 ath9k_hw_4k_get_eeprom(struct ath_hw *ah,
 	case EEP_DB_2:
 		return pModal->db1_1;
 	case EEP_MINOR_REV:
-		return ver_minor;
+		return pBase->version & AR5416_EEP_VER_MINOR_MASK;
 	case EEP_TX_MASK:
 		return pBase->txMask;
 	case EEP_RX_MASK:
 		return pBase->rxMask;
 	case EEP_FRAC_N_5G:
 		return 0;
-	case EEP_PWR_TABLE_OFFSET:
-		return AR5416_PWR_TABLE_OFFSET_DB;
-	case EEP_MODAL_VER:
-		return pModal->version;
-	case EEP_ANT_DIV_CTL1:
-		return pModal->antdiv_ctl1;
-	case EEP_TXGAIN_TYPE:
-		if (ver_minor >= AR5416_EEP_MINOR_VER_19)
-			return pBase->txGainType;
-		else
-			return AR5416_EEP_TXGAIN_ORIGINAL;
 	default:
 		return 0;
 	}
@@ -234,7 +217,7 @@ static void ath9k_hw_get_4k_gain_boundaries_pdadcs(struct ath_hw *ah,
 				struct ath9k_channel *chan,
 				struct cal_data_per_freq_4k *pRawDataSet,
 				u8 *bChans, u16 availPiers,
-				u16 tPdGainOverlap,
+				u16 tPdGainOverlap, int16_t *pMinCalPower,
 				u16 *pPdGainBoundaries, u8 *pPDADCValues,
 				u16 numXpdGains)
 {
@@ -261,7 +244,6 @@ static void ath9k_hw_get_4k_gain_boundaries_pdadcs(struct ath_hw *ah,
 	struct chan_centers centers;
 #define PD_GAIN_BOUNDARY_DEFAULT 58;
 
-	memset(&minPwrT4, 0, AR9287_NUM_PD_GAINS);
 	ath9k_hw_get_channel_centers(ah, chan, &centers);
 
 	for (numPiers = 0; numPiers < availPiers; numPiers++) {
@@ -320,6 +302,8 @@ static void ath9k_hw_get_4k_gain_boundaries_pdadcs(struct ath_hw *ah,
 		}
 	}
 
+	*pMinCalPower = (int16_t)(minPwrT4[0] / 2);
+
 	k = 0;
 
 	for (i = 0; i < numXpdGains; i++) {
@@ -341,7 +325,7 @@ static void ath9k_hw_get_4k_gain_boundaries_pdadcs(struct ath_hw *ah,
 		}
 
 		if (i == 0) {
-			if (AR_SREV_9280_20_OR_LATER(ah))
+			if (AR_SREV_9280_10_OR_LATER(ah))
 				ss = (int16_t)(0 - (minPwrT4[i] / 2));
 			else
 				ss = 0;
@@ -401,7 +385,6 @@ static void ath9k_hw_set_4k_power_cal_table(struct ath_hw *ah,
 				  struct ath9k_channel *chan,
 				  int16_t *pTxPowerIndexOffset)
 {
-	struct ath_common *common = ath9k_hw_common(ah);
 	struct ar5416_eeprom_4k *pEepData = &ah->eeprom.map4k;
 	struct cal_data_per_freq_4k *pRawDataset;
 	u8 *pCalBChans = NULL;
@@ -409,6 +392,7 @@ static void ath9k_hw_set_4k_power_cal_table(struct ath_hw *ah,
 	static u8 pdadcValues[AR5416_NUM_PDADC_VALUES];
 	u16 gainBoundaries[AR5416_EEP4K_PD_GAINS_IN_MASK];
 	u16 numPiers, i, j;
+	int16_t tMinCalPower;
 	u16 numXpdGain, xpdMask;
 	u16 xpdGainValues[AR5416_EEP4K_NUM_PD_GAINS] = { 0, 0 };
 	u32 reg32, regOffset, regChainOffset;
@@ -461,10 +445,8 @@ static void ath9k_hw_set_4k_power_cal_table(struct ath_hw *ah,
 			ath9k_hw_get_4k_gain_boundaries_pdadcs(ah, chan,
 					    pRawDataset, pCalBChans,
 					    numPiers, pdGainOverlap_t2,
-					    gainBoundaries,
+					    &tMinCalPower, gainBoundaries,
 					    pdadcValues, numXpdGain);
-
-			ENABLE_REGWRITE_BUFFER(ah);
 
 			if ((i == 0) || AR_SREV_5416_20_OR_LATER(ah)) {
 				REG_WRITE(ah, AR_PHY_TPCRG5 + regChainOffset,
@@ -488,26 +470,24 @@ static void ath9k_hw_set_4k_power_cal_table(struct ath_hw *ah,
 					((pdadcValues[4 * j + 3] & 0xFF) << 24);
 				REG_WRITE(ah, regOffset, reg32);
 
-				ath_print(common, ATH_DBG_EEPROM,
-					  "PDADC (%d,%4x): %4.4x %8.8x\n",
-					  i, regChainOffset, regOffset,
-					  reg32);
-				ath_print(common, ATH_DBG_EEPROM,
-					  "PDADC: Chain %d | "
-					  "PDADC %3d Value %3d | "
-					  "PDADC %3d Value %3d | "
-					  "PDADC %3d Value %3d | "
-					  "PDADC %3d Value %3d |\n",
-					  i, 4 * j, pdadcValues[4 * j],
-					  4 * j + 1, pdadcValues[4 * j + 1],
-					  4 * j + 2, pdadcValues[4 * j + 2],
-					  4 * j + 3,
-					  pdadcValues[4 * j + 3]);
+				DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
+					"PDADC (%d,%4x): %4.4x %8.8x\n",
+					i, regChainOffset, regOffset,
+					reg32);
+				DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
+					"PDADC: Chain %d | "
+					"PDADC %3d Value %3d | "
+					"PDADC %3d Value %3d | "
+					"PDADC %3d Value %3d | "
+					"PDADC %3d Value %3d |\n",
+					i, 4 * j, pdadcValues[4 * j],
+					4 * j + 1, pdadcValues[4 * j + 1],
+					4 * j + 2, pdadcValues[4 * j + 2],
+					4 * j + 3,
+					pdadcValues[4 * j + 3]);
 
 				regOffset += 4;
 			}
-
-			REGWRITE_BUFFER_FLUSH(ah);
 		}
 	}
 
@@ -768,12 +748,10 @@ static void ath9k_hw_4k_set_txpower(struct ath_hw *ah,
 
 	regulatory->max_power_level = ratesArray[i];
 
-	if (AR_SREV_9280_20_OR_LATER(ah)) {
+	if (AR_SREV_9280_10_OR_LATER(ah)) {
 		for (i = 0; i < Ar5416RateSize; i++)
-			ratesArray[i] -= AR5416_PWR_TABLE_OFFSET_DB * 2;
+			ratesArray[i] -= AR5416_PWR_TABLE_OFFSET * 2;
 	}
-
-	ENABLE_REGWRITE_BUFFER(ah);
 
 	/* OFDM power per rate */
 	REG_WRITE(ah, AR_PHY_POWER_TX_RATE1,
@@ -837,8 +815,6 @@ static void ath9k_hw_4k_set_txpower(struct ath_hw *ah,
 			  | ATH9K_POW_SM(ratesArray[rateDupOfdm], 8)
 			  | ATH9K_POW_SM(ratesArray[rateDupCck], 0));
 	}
-
-	REGWRITE_BUFFER_FLUSH(ah);
 }
 
 static void ath9k_hw_4k_set_addac(struct ath_hw *ah,
@@ -915,6 +891,9 @@ static void ath9k_hw_4k_set_gain(struct ath_hw *ah,
 		      AR9280_PHY_RXGAIN_TXRX_ATTEN, txRxAttenLocal);
 	REG_RMW_FIELD(ah, AR_PHY_RXGAIN + 0x1000,
 		      AR9280_PHY_RXGAIN_TXRX_MARGIN, pModal->rxTxMarginCh[0]);
+
+	if (AR_SREV_9285_11(ah))
+		REG_WRITE(ah, AR9285_AN_TOP4, (AR9285_AN_TOP4_DEFAULT | 0x14));
 }
 
 /*
@@ -1112,6 +1091,9 @@ static void ath9k_hw_4k_set_board_values(struct ath_hw *ah,
 	}
 
 
+	if (AR_SREV_9285_11(ah))
+		REG_WRITE(ah, AR9285_AN_TOP4, AR9285_AN_TOP4_DEFAULT);
+
 	REG_RMW_FIELD(ah, AR_PHY_SETTLING, AR_PHY_SETTLING_SWITCH,
 		      pModal->switchSettling);
 	REG_RMW_FIELD(ah, AR_PHY_DESIRED_SZ, AR_PHY_DESIRED_SZ_ADC,
@@ -1125,10 +1107,6 @@ static void ath9k_hw_4k_set_board_values(struct ath_hw *ah,
 
 	REG_RMW_FIELD(ah, AR_PHY_RF_CTL3, AR_PHY_TX_END_TO_A2_RX_ON,
 		      pModal->txEndToRxOn);
-
-	if (AR_SREV_9271_10(ah))
-		REG_RMW_FIELD(ah, AR_PHY_RF_CTL3, AR_PHY_TX_END_TO_A2_RX_ON,
-			      pModal->txEndToRxOn);
 	REG_RMW_FIELD(ah, AR_PHY_CCA, AR9280_PHY_CCA_THRESH62,
 		      pModal->thresh62);
 	REG_RMW_FIELD(ah, AR_PHY_EXT_CCA0, AR_PHY_EXT_CCA0_THRESH62,
@@ -1151,17 +1129,17 @@ static void ath9k_hw_4k_set_board_values(struct ath_hw *ah,
 	}
 }
 
-static u32 ath9k_hw_4k_get_eeprom_antenna_cfg(struct ath_hw *ah,
+static u16 ath9k_hw_4k_get_eeprom_antenna_cfg(struct ath_hw *ah,
 					      struct ath9k_channel *chan)
 {
 	struct ar5416_eeprom_4k *eep = &ah->eeprom.map4k;
 	struct modal_eep_4k_header *pModal = &eep->modalHeader;
 
-	return pModal->antCtrlCommon;
+	return pModal->antCtrlCommon & 0xFFFF;
 }
 
 static u8 ath9k_hw_4k_get_num_ant_config(struct ath_hw *ah,
-					 enum ath9k_hal_freq_band freq_band)
+					 enum ieee80211_band freq_band)
 {
 	return 1;
 }
@@ -1170,21 +1148,20 @@ static u16 ath9k_hw_4k_get_spur_channel(struct ath_hw *ah, u16 i, bool is2GHz)
 {
 #define EEP_MAP4K_SPURCHAN \
 	(ah->eeprom.map4k.modalHeader.spurChans[i].spurChan)
-	struct ath_common *common = ath9k_hw_common(ah);
 
 	u16 spur_val = AR_NO_SPUR;
 
-	ath_print(common, ATH_DBG_ANI,
-		  "Getting spur idx %d is2Ghz. %d val %x\n",
-		  i, is2GHz, ah->config.spurchans[i][is2GHz]);
+	DPRINTF(ah->ah_sc, ATH_DBG_ANI,
+		"Getting spur idx %d is2Ghz. %d val %x\n",
+		i, is2GHz, ah->config.spurchans[i][is2GHz]);
 
 	switch (ah->config.spurmode) {
 	case SPUR_DISABLE:
 		break;
 	case SPUR_ENABLE_IOCTL:
 		spur_val = ah->config.spurchans[i][is2GHz];
-		ath_print(common, ATH_DBG_ANI,
-			  "Getting spur val from new loc. %d\n", spur_val);
+		DPRINTF(ah->ah_sc, ATH_DBG_ANI,
+			"Getting spur val from new loc. %d\n", spur_val);
 		break;
 	case SPUR_ENABLE_EEPROM:
 		spur_val = EEP_MAP4K_SPURCHAN;

@@ -63,13 +63,6 @@ u16 ieee80211_select_queue(struct ieee80211_sub_if_data *sdata,
 	rcu_read_lock();
 	switch (sdata->vif.type) {
 	case NL80211_IFTYPE_AP_VLAN:
-		rcu_read_lock();
-		sta = rcu_dereference(sdata->u.vlan.sta);
-		if (sta)
-			sta_flags = get_sta_flags(sta);
-		rcu_read_unlock();
-		if (sta)
-			break;
 	case NL80211_IFTYPE_AP:
 		ra = skb->data;
 		break;
@@ -96,7 +89,7 @@ u16 ieee80211_select_queue(struct ieee80211_sub_if_data *sdata,
 	}
 
 	if (!sta && ra && !is_multicast_ether_addr(ra)) {
-		sta = sta_info_get(sdata, ra);
+		sta = sta_info_get(local, ra);
 		if (sta)
 			sta_flags = get_sta_flags(sta);
 	}

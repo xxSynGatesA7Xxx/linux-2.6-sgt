@@ -17,7 +17,6 @@
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/backlight.h>
-#include <linux/gfp.h>
 
 #include <mach/board.h>
 #include <mach/cpu.h>
@@ -118,7 +117,6 @@ static struct backlight_ops atmel_lcdc_bl_ops = {
 
 static void init_backlight(struct atmel_lcdfb_info *sinfo)
 {
-	struct backlight_properties props;
 	struct backlight_device	*bl;
 
 	sinfo->bl_power = FB_BLANK_UNBLANK;
@@ -126,10 +124,8 @@ static void init_backlight(struct atmel_lcdfb_info *sinfo)
 	if (sinfo->backlight)
 		return;
 
-	memset(&props, 0, sizeof(struct backlight_properties));
-	props.max_brightness = 0xff;
-	bl = backlight_device_register("backlight", &sinfo->pdev->dev, sinfo,
-				       &atmel_lcdc_bl_ops, &props);
+	bl = backlight_device_register("backlight", &sinfo->pdev->dev,
+			sinfo, &atmel_lcdc_bl_ops);
 	if (IS_ERR(bl)) {
 		dev_err(&sinfo->pdev->dev, "error %ld on backlight register\n",
 				PTR_ERR(bl));
@@ -139,6 +135,7 @@ static void init_backlight(struct atmel_lcdfb_info *sinfo)
 
 	bl->props.power = FB_BLANK_UNBLANK;
 	bl->props.fb_blank = FB_BLANK_UNBLANK;
+	bl->props.max_brightness = 0xff;
 	bl->props.brightness = atmel_bl_get_brightness(bl);
 }
 
@@ -967,7 +964,7 @@ static int __init atmel_lcdfb_probe(struct platform_device *pdev)
 	if (sinfo->atmel_lcdfb_power_control)
 		sinfo->atmel_lcdfb_power_control(1);
 
-	dev_info(dev, "fb%d: Atmel LCDC at 0x%08lx (mapped at %p), irq %d\n",
+	dev_info(dev, "fb%d: Atmel LCDC at 0x%08lx (mapped at %p), irq %lu\n",
 		       info->node, info->fix.mmio_start, sinfo->mmio, sinfo->irq_base);
 
 	return 0;

@@ -18,7 +18,6 @@
 #include <linux/dmapool.h>
 #include <linux/sysdev.h>
 #include <linux/errno.h>
-#include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/clk.h>
 #include <linux/err.h>
@@ -414,7 +413,7 @@ err_buff:
 EXPORT_SYMBOL(s3c2410_dma_enqueue);
 
 
-int s3c2410_dma_devconfig(unsigned int channel,
+int s3c2410_dma_devconfig(int channel,
 			  enum s3c2410_dmasrc source,
 			  unsigned long devaddr)
 {
@@ -697,7 +696,7 @@ static int s3c64xx_dma_init1(int chno, enum dma_ch chbase,
 		chptr->number = chno;
 		chptr->dmac = dmac;
 		chptr->regs = regptr;
-		regptr += PL080_Cx_STRIDE;
+		regptr += PL008_Cx_STRIDE;
 	}
 
 	/* for the moment, permanently enable the controller */

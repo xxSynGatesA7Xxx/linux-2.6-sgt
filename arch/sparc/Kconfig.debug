@@ -19,10 +19,13 @@ config DEBUG_DCFLUSH
 	bool "D-cache flush debugging"
 	depends on SPARC64 && DEBUG_KERNEL
 
+config STACK_DEBUG
+	bool "Stack Overflow Detection Support"
+
 config MCOUNT
 	bool
 	depends on SPARC64
-	depends on FUNCTION_TRACER
+	depends on STACK_DEBUG || FUNCTION_TRACER
 	default y
 
 config FRAME_POINTER

@@ -1,3 +1,5 @@
+# drivers/Kconfig
+
 menu "Device Drivers"
 
 source "drivers/base/Kconfig"
@@ -9,6 +11,10 @@ source "drivers/mtd/Kconfig"
 source "drivers/of/Kconfig"
 
 source "drivers/parport/Kconfig"
+
+
+# for TINY_FSR
+source "drivers/tfsr/Kconfig"
 
 source "drivers/pnp/Kconfig"
 
@@ -28,7 +34,7 @@ source "drivers/md/Kconfig"
 
 source "drivers/message/fusion/Kconfig"
 
-source "drivers/firewire/Kconfig"
+source "drivers/ieee1394/Kconfig"
 
 source "drivers/message/i2o/Kconfig"
 
@@ -49,6 +55,8 @@ source "drivers/char/Kconfig"
 source "drivers/i2c/Kconfig"
 
 source "drivers/spi/Kconfig"
+
+source "drivers/swi/Kconfig"
 
 source "drivers/pps/Kconfig"
 
@@ -88,6 +96,8 @@ source "drivers/memstick/Kconfig"
 
 source "drivers/leds/Kconfig"
 
+source "drivers/switch/Kconfig"
+
 source "drivers/accessibility/Kconfig"
 
 source "drivers/infiniband/Kconfig"
@@ -111,4 +121,11 @@ source "drivers/xen/Kconfig"
 source "drivers/staging/Kconfig"
 
 source "drivers/platform/Kconfig"
+
+source "drivers/onedram/Kconfig"
+
+source "drivers/onedram_recovery/Kconfig"
+
+source "drivers/sensor/Kconfig"
+
 endmenu

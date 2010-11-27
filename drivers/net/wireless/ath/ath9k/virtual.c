@@ -14,41 +14,47 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <linux/slab.h>
-
 #include "ath9k.h"
 
 struct ath9k_vif_iter_data {
-	const u8 *hw_macaddr;
-	u8 mask[ETH_ALEN];
+	int count;
+	u8 *addr;
 };
 
 static void ath9k_vif_iter(void *data, u8 *mac, struct ieee80211_vif *vif)
 {
 	struct ath9k_vif_iter_data *iter_data = data;
-	int i;
+	u8 *nbuf;
 
-	for (i = 0; i < ETH_ALEN; i++)
-		iter_data->mask[i] &= ~(iter_data->hw_macaddr[i] ^ mac[i]);
+	nbuf = krealloc(iter_data->addr, (iter_data->count + 1) * ETH_ALEN,
+			GFP_ATOMIC);
+	if (nbuf == NULL)
+		return;
+
+	memcpy(nbuf + iter_data->count * ETH_ALEN, mac, ETH_ALEN);
+	iter_data->addr = nbuf;
+	iter_data->count++;
 }
 
-void ath9k_set_bssid_mask(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
+void ath9k_set_bssid_mask(struct ieee80211_hw *hw)
 {
 	struct ath_wiphy *aphy = hw->priv;
 	struct ath_softc *sc = aphy->sc;
-	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
 	struct ath9k_vif_iter_data iter_data;
-	int i;
+	int i, j;
+	u8 mask[ETH_ALEN];
 
 	/*
-	 * Use the hardware MAC address as reference, the hardware uses it
-	 * together with the BSSID mask when matching addresses.
+	 * Add primary MAC address even if it is not in active use since it
+	 * will be configured to the hardware as the starting point and the
+	 * BSSID mask will need to be changed if another address is active.
 	 */
-	iter_data.hw_macaddr = common->macaddr;
-	memset(&iter_data.mask, 0xff, ETH_ALEN);
-
-	if (vif)
-		ath9k_vif_iter(&iter_data, vif->addr, vif);
+	iter_data.addr = kmalloc(ETH_ALEN, GFP_ATOMIC);
+	if (iter_data.addr) {
+		memcpy(iter_data.addr, sc->sc_ah->macaddr, ETH_ALEN);
+		iter_data.count = 1;
+	} else
+		iter_data.count = 0;
 
 	/* Get list of all active MAC addresses */
 	spin_lock_bh(&sc->wiphy_lock);
@@ -62,15 +68,38 @@ void ath9k_set_bssid_mask(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 	}
 	spin_unlock_bh(&sc->wiphy_lock);
 
-	memcpy(common->bssidmask, iter_data.mask, ETH_ALEN);
-	ath_hw_setbssidmask(common);
+	/* Generate an address mask to cover all active addresses */
+	memset(mask, 0, ETH_ALEN);
+	for (i = 0; i < iter_data.count; i++) {
+		u8 *a1 = iter_data.addr + i * ETH_ALEN;
+		for (j = i + 1; j < iter_data.count; j++) {
+			u8 *a2 = iter_data.addr + j * ETH_ALEN;
+			mask[0] |= a1[0] ^ a2[0];
+			mask[1] |= a1[1] ^ a2[1];
+			mask[2] |= a1[2] ^ a2[2];
+			mask[3] |= a1[3] ^ a2[3];
+			mask[4] |= a1[4] ^ a2[4];
+			mask[5] |= a1[5] ^ a2[5];
+		}
+	}
+
+	kfree(iter_data.addr);
+
+	/* Invert the mask and configure hardware */
+	sc->bssidmask[0] = ~mask[0];
+	sc->bssidmask[1] = ~mask[1];
+	sc->bssidmask[2] = ~mask[2];
+	sc->bssidmask[3] = ~mask[3];
+	sc->bssidmask[4] = ~mask[4];
+	sc->bssidmask[5] = ~mask[5];
+
+	ath9k_hw_setbssidmask(sc);
 }
 
 int ath9k_wiphy_add(struct ath_softc *sc)
 {
 	int i, error;
 	struct ath_wiphy *aphy;
-	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
 	struct ieee80211_hw *hw;
 	u8 addr[ETH_ALEN];
 
@@ -109,7 +138,7 @@ int ath9k_wiphy_add(struct ath_softc *sc)
 	sc->sec_wiphy[i] = aphy;
 	spin_unlock_bh(&sc->wiphy_lock);
 
-	memcpy(addr, common->macaddr, ETH_ALEN);
+	memcpy(addr, sc->sc_ah->macaddr, ETH_ALEN);
 	addr[0] |= 0x02; /* Locally managed address */
 	/*
 	 * XOR virtual wiphy index into the least significant bits to generate
@@ -121,7 +150,7 @@ int ath9k_wiphy_add(struct ath_softc *sc)
 
 	SET_IEEE80211_PERM_ADDR(hw, addr);
 
-	ath9k_set_hw_capab(sc, hw);
+	ath_set_hw_capab(sc, hw);
 
 	error = ieee80211_register_hw(hw);
 
@@ -186,8 +215,8 @@ static int ath9k_send_nullfunc(struct ath_wiphy *aphy,
 	info->control.rates[1].idx = -1;
 
 	memset(&txctl, 0, sizeof(struct ath_tx_control));
-	txctl.txq = &sc->tx.txq[sc->tx.hwq_map[WME_AC_VO]];
-	txctl.frame_type = ps ? ATH9K_IFT_PAUSE : ATH9K_IFT_UNPAUSE;
+	txctl.txq = &sc->tx.txq[sc->tx.hwq_map[ATH9K_WME_AC_VO]];
+	txctl.frame_type = ps ? ATH9K_INT_PAUSE : ATH9K_INT_UNPAUSE;
 
 	if (ath_tx_start(aphy->hw, skb, &txctl) != 0)
 		goto exit;
@@ -267,7 +296,6 @@ static void ath9k_wiphy_unpause_channel(struct ath_softc *sc)
 void ath9k_wiphy_chan_work(struct work_struct *work)
 {
 	struct ath_softc *sc = container_of(work, struct ath_softc, chan_work);
-	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
 	struct ath_wiphy *aphy = sc->next_wiphy;
 
 	if (aphy == NULL)
@@ -283,10 +311,6 @@ void ath9k_wiphy_chan_work(struct work_struct *work)
 	/* XXX: remove me eventually */
 	ath9k_update_ichannel(sc, aphy->hw,
 			      &sc->sc_ah->channels[sc->chan_idx]);
-
-	/* sync hw configuration for hw code */
-	common->hw = aphy->hw;
-
 	ath_update_chainmask(sc, sc->chan_is_ht);
 	if (ath_set_channel(sc, aphy->hw,
 			    &sc->sc_ah->channels[sc->chan_idx]) < 0) {
@@ -307,11 +331,13 @@ void ath9k_wiphy_chan_work(struct work_struct *work)
 void ath9k_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 {
 	struct ath_wiphy *aphy = hw->priv;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
+	struct ath_tx_info_priv *tx_info_priv = ATH_TX_INFO_PRIV(tx_info);
 
-	if ((tx_info->pad[0] & ATH_TX_INFO_FRAME_TYPE_PAUSE) &&
+	if (tx_info_priv && tx_info_priv->frame_type == ATH9K_INT_PAUSE &&
 	    aphy->state == ATH_WIPHY_PAUSING) {
-		if (!(tx_info->flags & IEEE80211_TX_STAT_ACK)) {
+		if (!(info->flags & IEEE80211_TX_STAT_ACK)) {
 			printk(KERN_DEBUG "ath9k: %s: no ACK for pause "
 			       "frame\n", wiphy_name(hw->wiphy));
 			/*
@@ -329,6 +355,9 @@ void ath9k_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 				   &aphy->sc->chan_work);
 		}
 	}
+
+	kfree(tx_info_priv);
+	tx_info->rate_driver_data[0] = NULL;
 
 	dev_kfree_skb(skb);
 }
@@ -490,9 +519,8 @@ int ath9k_wiphy_select(struct ath_wiphy *aphy)
 			 * frame being completed)
 			 */
 			spin_unlock_bh(&sc->wiphy_lock);
-			ath_radio_disable(sc, aphy->hw);
-			ath_radio_enable(sc, aphy->hw);
-			/* Only the primary wiphy hw is used for queuing work */
+			ath_radio_disable(sc);
+			ath_radio_enable(sc);
 			ieee80211_queue_work(aphy->sc->hw,
 				   &aphy->sc->chan_work);
 			return -EBUSY; /* previous select still in progress */
@@ -638,82 +666,15 @@ void ath9k_wiphy_set_scheduler(struct ath_softc *sc, unsigned int msec_int)
 bool ath9k_all_wiphys_idle(struct ath_softc *sc)
 {
 	unsigned int i;
-	if (!sc->pri_wiphy->idle)
+	if (sc->pri_wiphy->state != ATH_WIPHY_INACTIVE) {
 		return false;
+	}
 	for (i = 0; i < sc->num_sec_wiphy; i++) {
 		struct ath_wiphy *aphy = sc->sec_wiphy[i];
 		if (!aphy)
 			continue;
-		if (!aphy->idle)
+		if (aphy->state != ATH_WIPHY_INACTIVE)
 			return false;
 	}
 	return true;
-}
-
-/* caller must hold wiphy_lock */
-void ath9k_set_wiphy_idle(struct ath_wiphy *aphy, bool idle)
-{
-	struct ath_softc *sc = aphy->sc;
-
-	aphy->idle = idle;
-	ath_print(ath9k_hw_common(sc->sc_ah), ATH_DBG_CONFIG,
-		  "Marking %s as %s\n",
-		  wiphy_name(aphy->hw->wiphy),
-		  idle ? "idle" : "not-idle");
-}
-/* Only bother starting a queue on an active virtual wiphy */
-bool ath_mac80211_start_queue(struct ath_softc *sc, u16 skb_queue)
-{
-	struct ieee80211_hw *hw = sc->pri_wiphy->hw;
-	unsigned int i;
-	bool txq_started = false;
-
-	spin_lock_bh(&sc->wiphy_lock);
-
-	/* Start the primary wiphy */
-	if (sc->pri_wiphy->state == ATH_WIPHY_ACTIVE) {
-		ieee80211_wake_queue(hw, skb_queue);
-		txq_started = true;
-		goto unlock;
-	}
-
-	/* Now start the secondary wiphy queues */
-	for (i = 0; i < sc->num_sec_wiphy; i++) {
-		struct ath_wiphy *aphy = sc->sec_wiphy[i];
-		if (!aphy)
-			continue;
-		if (aphy->state != ATH_WIPHY_ACTIVE)
-			continue;
-
-		hw = aphy->hw;
-		ieee80211_wake_queue(hw, skb_queue);
-		txq_started = true;
-		break;
-	}
-
-unlock:
-	spin_unlock_bh(&sc->wiphy_lock);
-	return txq_started;
-}
-
-/* Go ahead and propagate information to all virtual wiphys, it won't hurt */
-void ath_mac80211_stop_queue(struct ath_softc *sc, u16 skb_queue)
-{
-	struct ieee80211_hw *hw = sc->pri_wiphy->hw;
-	unsigned int i;
-
-	spin_lock_bh(&sc->wiphy_lock);
-
-	/* Stop the primary wiphy */
-	ieee80211_stop_queue(hw, skb_queue);
-
-	/* Now stop the secondary wiphy queues */
-	for (i = 0; i < sc->num_sec_wiphy; i++) {
-		struct ath_wiphy *aphy = sc->sec_wiphy[i];
-		if (!aphy)
-			continue;
-		hw = aphy->hw;
-		ieee80211_stop_queue(hw, skb_queue);
-	}
-	spin_unlock_bh(&sc->wiphy_lock);
 }

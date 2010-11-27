@@ -58,7 +58,6 @@
  * 	      only available if that subsystem is enabled in the kernel.
  */
 
-#include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
@@ -223,11 +222,6 @@ META_COLLECTOR(int_maclen)
 	dst->value = skb->mac_len;
 }
 
-META_COLLECTOR(int_rxhash)
-{
-	dst->value = skb_get_rxhash(skb);
-}
-
 /**************************************************************************
  * Netfilter
  **************************************************************************/
@@ -309,18 +303,17 @@ META_COLLECTOR(var_sk_bound_if)
 {
 	SKIP_NONLOCAL(skb);
 
-	if (skb->sk->sk_bound_dev_if == 0) {
+	 if (skb->sk->sk_bound_dev_if == 0) {
 		dst->value = (unsigned long) "any";
 		dst->len = 3;
-	} else {
+	 } else  {
 		struct net_device *dev;
 
-		rcu_read_lock();
-		dev = dev_get_by_index_rcu(sock_net(skb->sk),
-					   skb->sk->sk_bound_dev_if);
+		dev = dev_get_by_index(&init_net, skb->sk->sk_bound_dev_if);
 		*err = var_dev(dev, dst);
-		rcu_read_unlock();
-	}
+		if (dev)
+			dev_put(dev);
+	 }
 }
 
 META_COLLECTOR(int_sk_refcnt)
@@ -546,7 +539,6 @@ static struct meta_ops __meta_ops[TCF_META_TYPE_MAX+1][TCF_META_ID_MAX+1] = {
 		[META_ID(SK_SENDMSG_OFF)]	= META_FUNC(int_sk_sendmsg_off),
 		[META_ID(SK_WRITE_PENDING)]	= META_FUNC(int_sk_write_pend),
 		[META_ID(VLAN_TAG)]		= META_FUNC(int_vlan_tag),
-		[META_ID(RXHASH)]		= META_FUNC(int_rxhash),
 	}
 };
 

@@ -32,9 +32,10 @@
 
 #include <linux/module.h>
 #include <linux/init.h>
-#include <linux/slab.h>
 #include <linux/platform_device.h>
 
+#include <pcmcia/cs_types.h>
+#include <pcmcia/cs.h>
 #include <pcmcia/ss.h>
 
 #include <asm/hardware/scoop.h>
@@ -50,7 +51,7 @@ static int (*sa11x0_pcmcia_hw_init[])(struct device *dev) = {
 #ifdef CONFIG_SA1100_CERF
 	pcmcia_cerf_init,
 #endif
-#if defined(CONFIG_SA1100_H3100) || defined(CONFIG_SA1100_H3600)
+#ifdef CONFIG_SA1100_H3600
 	pcmcia_h3600_init,
 #endif
 #ifdef CONFIG_SA1100_SHANNON
@@ -64,7 +65,7 @@ static int (*sa11x0_pcmcia_hw_init[])(struct device *dev) = {
 #endif
 };
 
-static int __devinit sa11x0_drv_pcmcia_probe(struct platform_device *dev)
+static int sa11x0_drv_pcmcia_probe(struct platform_device *dev)
 {
 	int i, ret = -ENODEV;
 
@@ -82,16 +83,18 @@ static int __devinit sa11x0_drv_pcmcia_probe(struct platform_device *dev)
 
 static int sa11x0_drv_pcmcia_remove(struct platform_device *dev)
 {
-	struct skt_dev_info *sinfo = platform_get_drvdata(dev);
-	int i;
+	return soc_common_drv_pcmcia_remove(&dev->dev);
+}
 
-	platform_set_drvdata(dev, NULL);
+static int sa11x0_drv_pcmcia_suspend(struct platform_device *dev,
+				     pm_message_t state)
+{
+	return pcmcia_socket_dev_suspend(&dev->dev);
+}
 
-	for (i = 0; i < sinfo->nskt; i++)
-		soc_pcmcia_remove_one(&sinfo->skt[i]);
-
-	kfree(sinfo);
-	return 0;
+static int sa11x0_drv_pcmcia_resume(struct platform_device *dev)
+{
+	return pcmcia_socket_dev_resume(&dev->dev);
 }
 
 static struct platform_driver sa11x0_pcmcia_driver = {
@@ -101,6 +104,8 @@ static struct platform_driver sa11x0_pcmcia_driver = {
 	},
 	.probe		= sa11x0_drv_pcmcia_probe,
 	.remove		= sa11x0_drv_pcmcia_remove,
+	.suspend 	= sa11x0_drv_pcmcia_suspend,
+	.resume 	= sa11x0_drv_pcmcia_resume,
 };
 
 /* sa11x0_pcmcia_init()

@@ -122,9 +122,11 @@ extern int s3c24xx_irq_resume(struct sys_device *dev);
  */
 extern void s3c_pm_dbg(const char *msg, ...);
 
-#define S3C_PMDBG(fmt...) s3c_pm_dbg(fmt)
+//#define S3C_PMDBG(fmt...) s3c_pm_dbg(fmt)
+#define S3C_PMDBG(fmt...) 
 #else
-#define S3C_PMDBG(fmt...) printk(KERN_DEBUG fmt)
+//#define S3C_PMDBG(fmt...) printk(KERN_DEBUG fmt)
+#define S3C_PMDBG(fmt...) 
 #endif
 
 #ifdef CONFIG_S3C_PM_DEBUG_LED_SMDK

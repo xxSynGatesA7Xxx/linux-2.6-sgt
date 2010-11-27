@@ -24,16 +24,41 @@
 #include <mach/map.h>
 
 #include <plat/regs-serial.h>
+#include <mach/regs-power.h>
 #include <mach/regs-clock.h>
 #include <mach/regs-irq.h>
 #include <asm/irq.h>
 
 #include <plat/pm.h>
 #include <mach/pm-core.h>
+#include <mach/regs-gpio.h>
+#include <mach/gpio-bank.h>
+#include <mach/gpio-bank-eint.h>
+#include <mach/regs-audss.h>
+
+#if defined(CONFIG_MACH_S5PC110_P1)
+#include <linux/gpio.h>
+
+int g_pm_wakeup_stat=PM_WAKEUP_NONE;
+#endif // CONFIG_MACH_S5PC110_P1
+
+
+#define USE_DMA_ALLOC
+
+#ifdef USE_DMA_ALLOC
+#include <linux/dma-mapping.h>
+
+static unsigned long *regs_save;
+static dma_addr_t phy_regs_save;
+#endif /* USE_DMA_ALLOC */
 
 /* for external use */
 
 unsigned long s3c_pm_flags;
+extern void s3c_config_sleep_gpio(void);
+
+//#define DBG(fmt...) printk(fmt)
+#define DBG(fmt...)
 
 /* Debug code:
  *
@@ -71,7 +96,8 @@ static inline void s3c_pm_debug_init(void)
 
 unsigned char pm_uart_udivslot;
 
-#ifdef CONFIG_SAMSUNG_PM_DEBUG
+#define ENABLE_UART_SAVE_RESTORE
+#ifdef ENABLE_UART_SAVE_RESTORE//CONFIG_SAMSUNG_PM_DEBUG
 
 struct pm_uart_save uart_save[CONFIG_SERIAL_SAMSUNG_UARTS];
 
@@ -88,8 +114,8 @@ static void s3c_pm_save_uart(unsigned int uart, struct pm_uart_save *save)
 	if (pm_uart_udivslot)
 		save->udivslot = __raw_readl(regs + S3C2443_DIVSLOT);
 
-	S3C_PMDBG("UART[%d]: ULCON=%04x, UCON=%04x, UFCON=%04x, UBRDIV=%04x\n",
-		  uart, save->ulcon, save->ucon, save->ufcon, save->ubrdiv);
+	//S3C_PMDBG("UART[%d]: ULCON=%04x, UCON=%04x, UFCON=%04x, UBRDIV=%04x\n",
+		  //uart, save->ulcon, save->ucon, save->ufcon, save->ubrdiv);
 }
 
 static void s3c_pm_save_uarts(void)
@@ -154,6 +180,100 @@ int s3c_irqext_wake(unsigned int irqno, unsigned int state)
 	return 0;
 }
 
+/////////////////////////////////
+
+#define eint_offset(irq)                (irq)
+#define eint_irq_to_bit(irq)            (1 << (eint_offset(irq) & 0x7))
+#define eint_conf_reg(irq)              ((eint_offset(irq)) >> 3)
+#define eint_filt_reg(irq)              ((eint_offset(irq)) >> 2)
+#define eint_mask_reg(irq)              ((eint_offset(irq)) >> 3)
+#define eint_pend_reg(irq)              ((eint_offset(irq)) >> 3)
+
+// intr_mode 0x2=>falling edge, 0x3=>rising dege, 0x4=>Both edge
+static void s3c_pm_set_eint(unsigned int irq, unsigned int intr_mode)
+{
+	int offs = (irq);
+	int shift;
+	u32 ctrl, mask, tmp;
+
+	shift = (offs & 0x7) * 4;
+	if((0 <= offs) && (offs < 8)){
+		tmp = readl(S5PV210_GPH0CON);
+		tmp |= (0xf << shift);
+		writel(tmp , S5PV210_GPH0CON);
+		/*pull up disable*/
+	}
+	else if((8 <= offs) && (offs < 16)){
+		tmp = readl(S5PV210_GPH1CON);
+		tmp |= (0xf << shift);
+		writel(tmp , S5PV210_GPH1CON);
+	}
+	else if((16 <= offs) && (offs < 24)){
+		tmp = readl(S5PV210_GPH2CON);
+		tmp |= (0xf << shift);
+		writel(tmp , S5PV210_GPH2CON);
+	}
+	else if((24 <= offs) && (offs < 32)){
+		tmp = readl(S5PV210_GPH3CON);
+		tmp |= (0xf << shift);
+		writel(tmp , S5PV210_GPH3CON);
+	}
+	else{
+		printk(KERN_ERR "No such irq number %d", offs);
+		return;
+	}
+
+	/*special handling for keypad eint*/
+	if( (24 <= irq) && (irq <= 27))
+	{// disable the pull up
+		tmp = readl(S5PV210_GPH3PUD);
+		tmp &= ~(0x3 << ((offs & 0x7) * 2));	
+		writel(tmp, S5PV210_GPH3PUD);
+		DBG("S5PV210_GPH3PUD = %x\n",readl(S5PV210_GPH3PUD));
+	}
+	
+	/*Set irq type*/
+	mask = 0x7 << shift;
+	ctrl = readl(S5PV210_EINTCON(eint_conf_reg(irq)));
+	ctrl &= ~mask;
+	ctrl |= intr_mode << shift;
+
+	writel(ctrl, S5PV210_EINTCON(eint_conf_reg(irq)));
+	/*clear mask*/
+	mask = readl(S5PV210_EINTMASK(eint_mask_reg(irq)));
+	mask &= ~(eint_irq_to_bit(irq));
+	writel(mask, S5PV210_EINTMASK(eint_mask_reg(irq)));
+
+	/*clear pending*/
+	mask = readl(S5PV210_EINTPEND(eint_pend_reg(irq)));
+	mask &= (eint_irq_to_bit(irq));
+	writel(mask, S5PV210_EINTPEND(eint_pend_reg(irq)));
+	
+	/*Enable wake up mask*/
+	tmp = readl(S5P_EINT_WAKEUP_MASK);
+	tmp &= ~(1 << (irq));
+	writel(tmp , S5P_EINT_WAKEUP_MASK);
+
+	DBG("S5PV210_EINTCON = %x\n",readl(S5PV210_EINTCON(eint_conf_reg(irq))));
+	DBG("S5PV210_EINTMASK = %x\n",readl(S5PV210_EINTMASK(eint_mask_reg(irq))));
+	DBG("S5PV210_EINTPEND = %x\n",readl(S5PV210_EINTPEND(eint_pend_reg(irq))));
+	
+	return;
+}
+
+
+static void s3c_pm_clear_eint(unsigned int irq)
+{
+	u32 mask;
+	/*clear pending*/
+	mask = readl(S5PV210_EINTPEND(eint_pend_reg(irq)));
+	mask &= (eint_irq_to_bit(irq));
+	writel(mask, S5PV210_EINTPEND(eint_pend_reg(irq)));
+}
+
+//////////////////////////////////
+
+
 /* helper functions to save and restore register state */
 
 /**
@@ -168,7 +288,7 @@ void s3c_pm_do_save(struct sleep_save *ptr, int count)
 {
 	for (; count > 0; count--, ptr++) {
 		ptr->val = __raw_readl(ptr->reg);
-		S3C_PMDBG("saved %p value %08lx\n", ptr->reg, ptr->val);
+	//	S3C_PMDBG("saved %p value %08lx\n", ptr->reg, ptr->val);
 	}
 }
 
@@ -186,8 +306,8 @@ void s3c_pm_do_save(struct sleep_save *ptr, int count)
 void s3c_pm_do_restore(struct sleep_save *ptr, int count)
 {
 	for (; count > 0; count--, ptr++) {
-		printk(KERN_DEBUG "restore %p (restore %08lx, was %08x)\n",
-		       ptr->reg, ptr->val, __raw_readl(ptr->reg));
+		//printk(KERN_DEBUG "restore %p (restore %08lx, was %08x)\n",
+		  //     ptr->reg, ptr->val, __raw_readl(ptr->reg));
 
 		__raw_writel(ptr->val, ptr->reg);
 	}
@@ -229,22 +349,95 @@ static void s3c_pm_show_resume_irqs(int start, unsigned long which,
 }
 
 
+#if defined(CONFIG_MACH_S5PC110_P1)
+/* s3c_pm_set_wakeup_stat
+ *
+ * MIDAS 2010/05/27
+ * Set Wakeup stat from sleep
+*/
+void s3c_pm_set_wakeup_stat(void)
+{
+	if(!gpio_get_value(GPIO_nPOWER))
+	{
+		g_pm_wakeup_stat = PM_POWER_KEY;
+	}
+}
+
+/* s3c_pm_set_wakeup_stat
+ *
+ * MIDAS 2010/05/27
+ * Get Wakeup stat
+*/
+int s3c_pm_get_wakeup_stat()
+{
+	return g_pm_wakeup_stat;
+}
+
+/* s3c_pm_set_wakeup_stat
+ *
+ * MIDAS 2010/05/27
+ * Clear Wakeup stat
+*/
+void s3c_pm_clear_wakeup_stat()
+{
+	g_pm_wakeup_stat = PM_WAKEUP_NONE;
+}
+
+EXPORT_SYMBOL(s3c_pm_get_wakeup_stat);
+EXPORT_SYMBOL(s3c_pm_clear_wakeup_stat);
+#endif // CONFIG_MACH_S5PC110_P1
+
+
 void (*pm_cpu_prep)(void);
 void (*pm_cpu_sleep)(void);
 
 #define any_allowed(mask, allow) (((mask) & (allow)) != (allow))
 
+void s5p_pad_pdn_control(void)
+{
+	unsigned int tmp1, tmp2;
+
+	// Enable AUDIO Block Power.
+	tmp1 = __raw_readl(S5P_NORMAL_CFG);
+	__raw_writel((tmp1 | (0x1 << 7)), S5P_NORMAL_CFG);
+
+	mdelay(10);
+
+	// Enable I2S0 Clock.
+	tmp2 = __raw_readl(S5P_CLKGATE_IP3);
+	__raw_writel((tmp2 | S5P_CLKGATE_IP3_I2S0), S5P_CLKGATE_IP3);
+
+	mdelay(10);
+
+	// Set PAD_PDN_CTRL to Zero.
+	__raw_writel(0x0, S5P_AUDSSREG(0x10204));
+	mdelay(10);
+
+	// Restore to Previous Clock Status.
+	__raw_writel(tmp2, S5P_CLKGATE_IP3);
+
+	mdelay(10);
+
+	// Restore to Previous Block Power Status.
+	__raw_writel(tmp1, S5P_NORMAL_CFG);
+
+}
+
+
+extern unsigned int HWREV;	// HWREV_MODE
+
 /* s3c_pm_enter
  *
  * central control for sleep/resume process
 */
-
 static int s3c_pm_enter(suspend_state_t state)
 {
+#ifndef USE_DMA_ALLOC
 	static unsigned long regs_save[16];
+#endif /* !USE_DMA_ALLOC */
+	unsigned int tmp, audiodomain_On;
 
 	/* ensure the debug is initialised (if enabled) */
-
 	s3c_pm_debug_init();
 
 	S3C_PMDBG("%s(%d)\n", __func__, state);
@@ -254,10 +447,18 @@ static int s3c_pm_enter(suspend_state_t state)
 		return -EINVAL;
 	}
 
+//	printk("[PM-1] EINT0(0x%02x), EINT1(0x%02x), EINT2(0x%02x), EINT3(0x%02x)\n", 
+//		__raw_readl(S5PV210_EINT0PEND), __raw_readl(S5PV210_EINT1PEND),
+//		__raw_readl(S5PV210_EINT2PEND), __raw_readl(S5PV210_EINT3PEND));
+
+	s5p_pad_pdn_control();
+
 	/* check if we have anything to wake-up with... bad things seem
 	 * to happen if you suspend with no wakeup (system will often
 	 * require a full power-cycle)
 	*/
+	s3c_irqwake_intmask = 0xFFDD; // key || rtc_alarm
+
 
 	if (!any_allowed(s3c_irqwake_intmask, s3c_irqwake_intallow) &&
 	    !any_allowed(s3c_irqwake_eintmask, s3c_irqwake_eintallow)) {
@@ -266,9 +467,23 @@ static int s3c_pm_enter(suspend_state_t state)
 		return -EINVAL;
 	}
 
+	// If pmic INT occured while entering sleep mode, then return.
+	if( __raw_readl(S5PV210_EINT0PEND) & 0x80 ) {
+		printk(KERN_ERR "%s: Aborting sleep because pmic INT\n", __func__);
+		return -EINVAL;
+	}
+
+
 	/* store the physical address of the register recovery block */
 
+#ifndef USE_DMA_ALLOC
 	s3c_sleep_save_phys = virt_to_phys(regs_save);
+#else
+	__raw_writel(phy_regs_save, S5P_INFORM2);
+#endif /* !USE_DMA_ALLOC */
+
+	/* set flag for sleep mode idle2 flag is also reserved */
+	__raw_writel(SLEEP_MODE, S5P_INFORM1);
 
 	S3C_PMDBG("s3c_sleep_save_phys=0x%08lx\n", s3c_sleep_save_phys);
 
@@ -278,61 +493,161 @@ static int s3c_pm_enter(suspend_state_t state)
 	s3c_pm_save_uarts();
 	s3c_pm_save_core();
 
-	/* set the irq configuration for wake */
+	s3c_config_sleep_gpio();
 
+	/* set the irq configuration for wake */
 	s3c_pm_configure_extint();
 
-	S3C_PMDBG("sleep: irq wakeup masks: %08lx,%08lx\n",
-	    s3c_irqwake_intmask, s3c_irqwake_eintmask);
+	S3C_PMDBG("sleep: irq wakeup masks: 0x%08lx, 0x%08lx\n",
+			s3c_irqwake_intmask, s3c_irqwake_eintmask);
 
-	s3c_pm_arch_prepare_irqs();
+	/* Set wake up sources */
+	s3c_pm_set_eint(7, 0x2);  // PMIC INT
+	s3c_pm_set_eint(8, 0x4);  // DET_3.5
+	s3c_pm_set_eint(9, 0x3);  // TA_nCHG, Rising edge
+	s3c_pm_set_eint(11, 0x2);  // OneDRAM INT
+#if defined (CONFIG_TARGET_LOCALE_EUR) || defined(CONFIG_TARGET_LOCALE_HKTW) || defined (CONFIG_TARGET_LOCALE_HKTW_FET) || defined(CONFIG_TARGET_LOCALE_VZW) || defined(CONFIG_TARGET_LOCALE_USAGSM)
+	s3c_pm_set_eint(12, 0x4);  // SEND_END
+#endif
+	s3c_pm_set_eint(14, 0x4);  // FUEL_ALRT
+	s3c_pm_set_eint(15, 0x2);  // PHONE_ACTIVE
+	s3c_pm_set_eint(20, 0x4);  // WLAN
+	s3c_pm_set_eint(21, 0x4);  // BT
+	s3c_pm_set_eint(22, 0x2);  // Power Key
+	s3c_pm_set_eint(23, 0x2);  // Jack_nINT
+	s3c_pm_set_eint(24, 0x4);  // VOL_UP
+	s3c_pm_set_eint(25, 0x4);  // VOL_DN
+#ifndef CONFIG_TARGET_LOCALE_VZW
+	s3c_pm_set_eint(27, 0x4);  // SIM
+#endif
+
+	s3c_pm_set_eint(28, 0x4);  // T_FLASH
+#if defined (CONFIG_TARGET_LOCALE_EUR) || defined(CONFIG_TARGET_LOCALE_HKTW) || defined (CONFIG_TARGET_LOCALE_HKTW_FET) || defined(CONFIG_TARGET_LOCALE_VZW) || defined(CONFIG_TARGET_LOCALE_USAGSM)
+	if(HWREV <= 0x4)
+		s3c_pm_set_eint(29, 0x2);  // HOME Key
+#endif
+#ifdef CONFIG_TARGET_LOCALE_KOR
+	s3c_pm_set_eint(30, 0x4);  // SEND_END
+#endif
+
+	s3c_pm_set_eint(5, 0x4);   //dock
+	s3c_pm_set_eint(29, 0x4);  //accessory 
+
+
+	//s3c_pm_arch_prepare_irqs();
 
 	/* call cpu specific preparation */
-
 	pm_cpu_prep();
 
 	/* flush cache back to ram */
-
 	flush_cache_all();
 
 	s3c_pm_check_store();
 
-	/* send the cpu to sleep... */
+	__raw_writel(s3c_irqwake_intmask, S5P_WAKEUP_MASK); //0xFFDD:key, RTC_ALARM	
 
+	/*clear for next wakeup*/
+	tmp = __raw_readl(S5P_WAKEUP_STAT);
+	__raw_writel(tmp, S5P_WAKEUP_STAT);
+
+	//s3c_config_sleep_gpio();
+
+	// Enable PS_HOLD pin to avoid reset failure */
+        __raw_writel((0x5 << 12 | 0x1<<9 | 0x1<<8 | 0x1<<0),S5P_PSHOLD_CONTROL);
+
+
+	/* send the cpu to sleep... */
 	s3c_pm_arch_stop_clocks();
+
 
 	/* s3c_cpu_save will also act as our return point from when
 	 * we resume as it saves its own register state and restores it
 	 * during the resume.  */
-
 	s3c_cpu_save(regs_save);
 
-	/* restore the cpu state using the kernel's cpu init code. */
 
+	/* restore the cpu state using the kernel's cpu init code. */
 	cpu_init();
 
 	/* restore the system state */
-
 	s3c_pm_restore_core();
+
+	/*Reset the uart registers*/
+	__raw_writel(0x0, S3C24XX_VA_UART3+S3C2410_UCON);
+	__raw_writel(0xf, S3C24XX_VA_UART3+S5P_UINTM);
+	__raw_writel(0xf, S3C24XX_VA_UART3+S5P_UINTSP);
+	__raw_writel(0xf, S3C24XX_VA_UART3+S5P_UINTP);
+	__raw_writel(0x0, S3C24XX_VA_UART2+S3C2410_UCON);
+	__raw_writel(0xf, S3C24XX_VA_UART2+S5P_UINTM);
+	__raw_writel(0xf, S3C24XX_VA_UART2+S5P_UINTSP);
+	__raw_writel(0xf, S3C24XX_VA_UART2+S5P_UINTP);
+	__raw_writel(0x0, S3C24XX_VA_UART1+S3C2410_UCON);
+	__raw_writel(0xf, S3C24XX_VA_UART1+S5P_UINTM);
+	__raw_writel(0xf, S3C24XX_VA_UART1+S5P_UINTSP);
+	__raw_writel(0xf, S3C24XX_VA_UART1+S5P_UINTP);
+	__raw_writel(0x0, S3C24XX_VA_UART0+S3C2410_UCON);
+	__raw_writel(0xf, S3C24XX_VA_UART0+S5P_UINTM);
+	__raw_writel(0xf, S3C24XX_VA_UART0+S5P_UINTSP);
+	__raw_writel(0xf, S3C24XX_VA_UART0+S5P_UINTP);
+
 	s3c_pm_restore_uarts();
 	s3c_pm_restore_gpios();
+
+	tmp = readl(S5P_NORMAL_CFG);
+	if(!(tmp & S5PC110_POWER_DOMAIN_AUDIO)) {
+		tmp = tmp | S5PC110_POWER_DOMAIN_AUDIO;
+		writel(tmp , S5P_NORMAL_CFG);
+		audiodomain_On = 1;
+	} else {
+		audiodomain_On = 0;
+	}
+
+	/* enable gpio, uart, mmc */
+	tmp = __raw_readl(S5P_OTHERS);
+	tmp |= (1<<31) | (1<<30) | (1<<28) | (1<<29);
+	__raw_writel(tmp, S5P_OTHERS);
+
+	tmp = readl(S5P_NORMAL_CFG);
+	if (audiodomain_On) {
+		tmp = tmp & ~S5PC110_POWER_DOMAIN_AUDIO;
+		writel(tmp , S5P_NORMAL_CFG);
+	}
 
 	s3c_pm_debug_init();
 
 	/* check what irq (if any) restored the system */
-
 	s3c_pm_arch_show_resume_irqs();
 
-	S3C_PMDBG("%s: post sleep, preparing to return\n", __func__);
+
+	/*clear for next wakeup*/
+	tmp = __raw_readl(S5P_WAKEUP_STAT);
+	printk("\n[PM] S5P_WAKEUP_STAT = 0x%08x\n", tmp);
+	__raw_writel(tmp, S5P_WAKEUP_STAT);
+
+
+#if defined(CONFIG_MACH_S5PC110_P1)
+	// Set wakeup stat
+	s3c_pm_set_wakeup_stat();
+#endif // CONFIG_MACH_S5PC110_P1
+
+	//s3c_pm_clear_eint(21);
+	//s3c_pm_clear_eint(22);
+
+	//S3C_PMDBG("%s: post sleep, preparing to return\n", __func__);
+	//printk("%s: post sleep, preparing to return\n", __func__);
 
 	/* LEDs should now be 1110 */
-	s3c_pm_debug_smdkled(1 << 1, 0);
+	//s3c_pm_debug_smdkled(1 << 1, 0);
 
 	s3c_pm_check_restore();
 
-	/* ok, let's return from sleep */
+	printk("[PM-2] EINT0(0x%02x), EINT1(0x%02x), EINT2(0x%02x), EINT3(0x%02x)\n", 
+		__raw_readl(S5PV210_EINT0PEND), __raw_readl(S5PV210_EINT1PEND),
+		__raw_readl(S5PV210_EINT2PEND), __raw_readl(S5PV210_EINT3PEND));
 
+	/* ok, let's return from sleep */
 	S3C_PMDBG("S3C PM Resume (post-restore)\n");
+
 	return 0;
 }
 
@@ -373,6 +688,16 @@ int __init s3c_pm_init(void)
 {
 	printk("S3C Power Management, Copyright 2004 Simtec Electronics\n");
 
+	// ABB register setup
+	__raw_writel(0x00800000, S5P_ABB_VALUE ); //0xe010c300
+
+#ifdef USE_DMA_ALLOC
+	regs_save = dma_alloc_coherent(NULL, 4096, &phy_regs_save, GFP_KERNEL);
+	if (regs_save == NULL) {
+		printk(KERN_ERR "DMA alloc error\n");
+		return -1;
+	}
+#endif /* USE_DMA_ALLOC */
 	suspend_set_ops(&s3c_pm_ops);
 	return 0;
 }

@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2004 - 2009 Ivo van Doorn <IvDoorn@gmail.com>
+	Copyright (C) 2004 - 2009 rt2x00 SourceForge Project
 	<http://rt2x00.serialmonkey.com>
 
 	This program is free software; you can redistribute it and/or modify
@@ -35,7 +35,7 @@
 
 /*
  * Signal information.
- * Default offset is required for RSSI <-> dBm conversion.
+ * Defaul offset is required for RSSI <-> dBm conversion.
  */
 #define DEFAULT_RSSI_OFFSET		100
 
@@ -65,7 +65,6 @@
  * CSR0: ASIC revision number.
  */
 #define CSR0				0x0000
-#define CSR0_REVISION			FIELD32(0x0000ffff)
 
 /*
  * CSR1: System control register.

@@ -18,13 +18,16 @@
 #include <linux/page-flags.h>
 #include <linux/sched.h>
 #include <linux/highmem.h>
-#include <linux/perf_event.h>
 
 #include <asm/system.h>
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 
 #include "fault.h"
+
+#ifdef CONFIG_KERNEL_DEBUG_SEC
+#include <linux/kernel_sec_common.h>
+#endif
 
 /*
  * Fault status register encodings.  We steal bit 31 for our own purposes.
@@ -38,6 +41,7 @@ static inline int fsr_fs(unsigned int fsr)
 {
 	return (fsr & FSR_FS3_0) | (fsr & FSR_FS4) >> 6;
 }
+extern int kernel_sec_check_debug_level_high(void);
 
 #ifdef CONFIG_MMU
 
@@ -165,6 +169,31 @@ __do_user_fault(struct task_struct *tsk, unsigned long addr,
 		show_pte(tsk->mm, addr);
 		show_regs(regs);
 	}
+#endif
+
+#ifdef CONFIG_TARGET_LOCALE_KOR 
+#ifdef CONFIG_KERNEL_DEBUG_SEC
+#define PLATFORM_UPLOAD_ADDR		(0xdeadafc1)	// android_dir/frameworks/base/core/jni/android_os_debug.cpp
+
+	if( 0 != strncmp( current->group_leader->comm, "playlogo", sizeof("playlogo")) ) // the process which is decided not to check.
+	{
+#if 0 // only param_high sends device into user fault.
+        if( 0xdeadd00d == addr )
+            printk("[DBG] User Fault Reason : dvmAbort \n"); 
+            ////////////////////////
+
+		if( KERNEL_SEC_DEBUG_LEVEL_MID == kernel_sec_get_debug_level() || KERNEL_SEC_DEBUG_LEVEL_HIGH == kernel_sec_get_debug_level() )
+	    {
+            if( 0 == strncmp( current->group_leader->comm, "system_server", sizeof("system_server") ) )
+                panic("[DBG] User Fault Reason : Platform Reset \n");
+			if ( PLATFORM_UPLOAD_ADDR == addr )
+				panic("[DBG] User Fault Reason : ANR \n");
+		}
+#endif
+		if(kernel_sec_check_debug_level_high()==1)
+			panic("[DBG] User Fault\n");
+	}
+#endif
 #endif
 
 	tsk->thread.address = addr;
@@ -303,12 +332,6 @@ do_page_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	fault = __do_page_fault(mm, addr, fsr, tsk);
 	up_read(&mm->mmap_sem);
 
-	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, 0, regs, addr);
-	if (fault & VM_FAULT_MAJOR)
-		perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MAJ, 1, 0, regs, addr);
-	else if (fault & VM_FAULT_MINOR)
-		perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MIN, 1, 0, regs, addr);
-
 	/*
 	 * Handle the "normal" case first - VM_FAULT_MAJOR / VM_FAULT_MINOR
 	 */
@@ -393,9 +416,6 @@ do_translation_fault(unsigned long addr, unsigned int fsr,
 	if (addr < TASK_SIZE)
 		return do_page_fault(addr, fsr, regs);
 
-	if (user_mode(regs))
-		goto bad_area;
-
 	index = pgd_index(addr);
 
 	/*
@@ -413,16 +433,7 @@ do_translation_fault(unsigned long addr, unsigned int fsr,
 	pmd_k = pmd_offset(pgd_k, addr);
 	pmd   = pmd_offset(pgd, addr);
 
-	/*
-	 * On ARM one Linux PGD entry contains two hardware entries (see page
-	 * tables layout in pgtable.h). We normally guarantee that we always
-	 * fill both L1 entries. But create_mapping() doesn't follow the rule.
-	 * It can create inidividual L1 entries, so here we have to call
-	 * pmd_none() check for the entry really corresponded to address, not
-	 * for the first of pair.
-	 */
-	index = (addr >> SECTION_SHIFT) & 1;
-	if (pmd_none(pmd_k[index]))
+	if (pmd_none(*pmd_k))
 		goto bad_area;
 
 	copy_pmd(pmd, pmd_k);
@@ -472,9 +483,9 @@ static struct fsr_info {
 	 * defines these to be "precise" aborts.
 	 */
 	{ do_bad,		SIGSEGV, 0,		"vector exception"		   },
-	{ do_bad,		SIGBUS,	 BUS_ADRALN,	"alignment exception"		   },
+	{ do_bad,		SIGILL,	 BUS_ADRALN,	"alignment exception"		   },
 	{ do_bad,		SIGKILL, 0,		"terminal exception"		   },
-	{ do_bad,		SIGBUS,	 BUS_ADRALN,	"alignment exception"		   },
+	{ do_bad,		SIGILL,	 BUS_ADRALN,	"alignment exception"		   },
 	{ do_bad,		SIGBUS,	 0,		"external abort on linefetch"	   },
 	{ do_translation_fault,	SIGSEGV, SEGV_MAPERR,	"section translation fault"	   },
 	{ do_bad,		SIGBUS,	 0,		"external abort on linefetch"	   },
@@ -512,15 +523,13 @@ static struct fsr_info {
 
 void __init
 hook_fault_code(int nr, int (*fn)(unsigned long, unsigned int, struct pt_regs *),
-		int sig, int code, const char *name)
+		int sig, const char *name)
 {
-	if (nr < 0 || nr >= ARRAY_SIZE(fsr_info))
-		BUG();
-
-	fsr_info[nr].fn   = fn;
-	fsr_info[nr].sig  = sig;
-	fsr_info[nr].code = code;
-	fsr_info[nr].name = name;
+	if (nr >= 0 && nr < ARRAY_SIZE(fsr_info)) {
+		fsr_info[nr].fn   = fn;
+		fsr_info[nr].sig  = sig;
+		fsr_info[nr].name = name;
+	}
 }
 
 /*
@@ -581,19 +590,6 @@ static struct fsr_info ifsr_info[] = {
 	{ do_bad,		SIGBUS,  0,		"unknown 31"			   },
 };
 
-void __init
-hook_ifault_code(int nr, int (*fn)(unsigned long, unsigned int, struct pt_regs *),
-		 int sig, int code, const char *name)
-{
-	if (nr < 0 || nr >= ARRAY_SIZE(ifsr_info))
-		BUG();
-
-	ifsr_info[nr].fn   = fn;
-	ifsr_info[nr].sig  = sig;
-	ifsr_info[nr].code = code;
-	ifsr_info[nr].name = name;
-}
-
 asmlinkage void __exception
 do_PrefetchAbort(unsigned long addr, unsigned int ifsr, struct pt_regs *regs)
 {
@@ -613,25 +609,3 @@ do_PrefetchAbort(unsigned long addr, unsigned int ifsr, struct pt_regs *regs)
 	arm_notify_die("", regs, &info, ifsr, 0);
 }
 
-static int __init exceptions_init(void)
-{
-	if (cpu_architecture() >= CPU_ARCH_ARMv6) {
-		hook_fault_code(4, do_translation_fault, SIGSEGV, SEGV_MAPERR,
-				"I-cache maintenance fault");
-	}
-
-	if (cpu_architecture() >= CPU_ARCH_ARMv7) {
-		/*
-		 * TODO: Access flag faults introduced in ARMv6K.
-		 * Runtime check for 'K' extension is needed
-		 */
-		hook_fault_code(3, do_bad, SIGSEGV, SEGV_MAPERR,
-				"section access flag fault");
-		hook_fault_code(6, do_bad, SIGSEGV, SEGV_MAPERR,
-				"section access flag fault");
-	}
-
-	return 0;
-}
-
-arch_initcall(exceptions_init);

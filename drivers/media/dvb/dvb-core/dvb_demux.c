@@ -30,7 +30,6 @@
 #include <linux/string.h>
 #include <linux/crc32.h>
 #include <asm/uaccess.h>
-#include <asm/div64.h>
 
 #include "dvb_demux.h"
 
@@ -44,11 +43,6 @@ static int dvb_demux_tscheck;
 module_param(dvb_demux_tscheck, int, 0644);
 MODULE_PARM_DESC(dvb_demux_tscheck,
 		"enable transport stream continuity and TEI check");
-
-static int dvb_demux_speedcheck;
-module_param(dvb_demux_speedcheck, int, 0644);
-MODULE_PARM_DESC(dvb_demux_speedcheck,
-		"enable transport stream speed check");
 
 #define dprintk_tscheck(x...) do {                              \
 		if (dvb_demux_tscheck && printk_ratelimit())    \
@@ -393,40 +387,16 @@ static void dvb_dmx_swfilter_packet(struct dvb_demux *demux, const u8 *buf)
 	u16 pid = ts_pid(buf);
 	int dvr_done = 0;
 
-	if (dvb_demux_speedcheck) {
-		struct timespec cur_time, delta_time;
-		u64 speed_bytes, speed_timedelta;
+	if (dvb_demux_tscheck) {
+		if (!demux->cnt_storage)
+			demux->cnt_storage = vmalloc(MAX_PID + 1);
 
-		demux->speed_pkts_cnt++;
+		if (!demux->cnt_storage) {
+			printk(KERN_WARNING "Couldn't allocate memory for TS/TEI check. Disabling it\n");
+			dvb_demux_tscheck = 0;
+			goto no_dvb_demux_tscheck;
+		}
 
-		/* show speed every SPEED_PKTS_INTERVAL packets */
-		if (!(demux->speed_pkts_cnt % SPEED_PKTS_INTERVAL)) {
-			cur_time = current_kernel_time();
-
-			if (demux->speed_last_time.tv_sec != 0 &&
-					demux->speed_last_time.tv_nsec != 0) {
-				delta_time = timespec_sub(cur_time,
-						demux->speed_last_time);
-				speed_bytes = (u64)demux->speed_pkts_cnt
-					* 188 * 8;
-				/* convert to 1024 basis */
-				speed_bytes = 1000 * div64_u64(speed_bytes,
-						1024);
-				speed_timedelta =
-					(u64)timespec_to_ns(&delta_time);
-				speed_timedelta = div64_u64(speed_timedelta,
-						1000000); /* nsec -> usec */
-				printk(KERN_INFO "TS speed %llu Kbits/sec \n",
-						div64_u64(speed_bytes,
-							speed_timedelta));
-			};
-
-			demux->speed_last_time = cur_time;
-			demux->speed_pkts_cnt = 0;
-		};
-	};
-
-	if (demux->cnt_storage && dvb_demux_tscheck) {
 		/* check pkt counter */
 		if (pid < MAX_PID) {
 			if (buf[1] & 0x80)
@@ -445,6 +415,7 @@ static void dvb_dmx_swfilter_packet(struct dvb_demux *demux, const u8 *buf)
 		};
 		/* end check */
 	};
+no_dvb_demux_tscheck:
 
 	list_for_each_entry(feed, &demux->feed_list, list_head) {
 		if ((feed->pid != pid) && (feed->pid != 0x2000))
@@ -1130,9 +1101,13 @@ static int dvbdmx_write(struct dmx_demux *demux, const char __user *buf, size_t 
 	if ((!demux->frontend) || (demux->frontend->source != DMX_MEMORY_FE))
 		return -EINVAL;
 
-	p = memdup_user(buf, count);
-	if (IS_ERR(p))
-		return PTR_ERR(p);
+	p = kmalloc(count, GFP_USER);
+	if (!p)
+		return -ENOMEM;
+	if (copy_from_user(p, buf, count)) {
+		kfree(p);
+		return -EFAULT;
+	}
 	if (mutex_lock_interruptible(&dvbdemux->mutex)) {
 		kfree(p);
 		return -ERESTARTSYS;
@@ -1232,7 +1207,6 @@ int dvb_dmx_init(struct dvb_demux *dvbdemux)
 	dvbdemux->feed = vmalloc(dvbdemux->feednum * sizeof(struct dvb_demux_feed));
 	if (!dvbdemux->feed) {
 		vfree(dvbdemux->filter);
-		dvbdemux->filter = NULL;
 		return -ENOMEM;
 	}
 	for (i = 0; i < dvbdemux->filternum; i++) {
@@ -1243,10 +1217,6 @@ int dvb_dmx_init(struct dvb_demux *dvbdemux)
 		dvbdemux->feed[i].state = DMX_STATE_FREE;
 		dvbdemux->feed[i].index = i;
 	}
-
-	dvbdemux->cnt_storage = vmalloc(MAX_PID + 1);
-	if (!dvbdemux->cnt_storage)
-		printk(KERN_WARNING "Couldn't allocate memory for TS/TEI check. Disabling it\n");
 
 	INIT_LIST_HEAD(&dvbdemux->frontend_list);
 

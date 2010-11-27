@@ -32,7 +32,6 @@
 #include <linux/device.h>
 #include <linux/proc_fs.h>
 #include <linux/acpi.h>
-#include <linux/slab.h>
 #ifdef CONFIG_X86
 #include <asm/mpspec.h>
 #endif
@@ -55,7 +54,7 @@ EXPORT_SYMBOL(acpi_root_dir);
 static int set_power_nocheck(const struct dmi_system_id *id)
 {
 	printk(KERN_NOTICE PREFIX "%s detected - "
-		"disable power check in power transition\n", id->ident);
+		"disable power check in power transistion\n", id->ident);
 	acpi_power_nocheck = 1;
 	return 0;
 }
@@ -68,36 +67,6 @@ static struct dmi_system_id __cpuinitdata power_nocheck_dmi_table[] = {
 	{},
 };
 
-
-#ifdef CONFIG_X86
-static int set_copy_dsdt(const struct dmi_system_id *id)
-{
-	printk(KERN_NOTICE "%s detected - "
-		"force copy of DSDT to local memory\n", id->ident);
-	acpi_gbl_copy_dsdt_locally = 1;
-	return 0;
-}
-
-static struct dmi_system_id dsdt_dmi_table[] __initdata = {
-	/*
-	 * Invoke DSDT corruption work-around on all Toshiba Satellite.
-	 * https://bugzilla.kernel.org/show_bug.cgi?id=14679
-	 */
-	{
-	 .callback = set_copy_dsdt,
-	 .ident = "TOSHIBA Satellite",
-	 .matches = {
-		DMI_MATCH(DMI_SYS_VENDOR, "TOSHIBA"),
-		DMI_MATCH(DMI_PRODUCT_NAME, "Satellite"),
-		},
-	},
-	{}
-};
-#else
-static struct dmi_system_id dsdt_dmi_table[] __initdata = {
-	{}
-};
-#endif
 
 /* --------------------------------------------------------------------------
                                 Device Management
@@ -221,16 +190,16 @@ int acpi_bus_get_power(acpi_handle handle, int *state)
 		 * Get the device's power state either directly (via _PSC) or
 		 * indirectly (via power resources).
 		 */
-		if (device->power.flags.power_resources) {
-			result = acpi_power_get_inferred_state(device);
-			if (result)
-				return result;
-		} else if (device->power.flags.explicit_get) {
+		if (device->power.flags.explicit_get) {
 			status = acpi_evaluate_integer(device->handle, "_PSC",
 						       NULL, &psc);
 			if (ACPI_FAILURE(status))
 				return -ENODEV;
 			device->power.state = (int)psc;
+		} else if (device->power.flags.power_resources) {
+			result = acpi_power_get_inferred_state(device);
+			if (result)
+				return result;
 		}
 
 		*state = device->power.state;
@@ -393,6 +362,11 @@ static void acpi_print_osc_error(acpi_handle handle,
 	printk("\n");
 }
 
+static u8 hex_val(unsigned char c)
+{
+	return isdigit(c) ? c - '0' : toupper(c) - 'A' + 10;
+}
+
 static acpi_status acpi_str_to_uuid(char *str, u8 *uuid)
 {
 	int i;
@@ -409,8 +383,8 @@ static acpi_status acpi_str_to_uuid(char *str, u8 *uuid)
 			return AE_BAD_PARAMETER;
 	}
 	for (i = 0; i < 16; i++) {
-		uuid[i] = hex_to_bin(str[opc_map_to_uuid[i]]) << 4;
-		uuid[i] |= hex_to_bin(str[opc_map_to_uuid[i] + 1]);
+		uuid[i] = hex_val(str[opc_map_to_uuid[i]]) << 4;
+		uuid[i] |= hex_val(str[opc_map_to_uuid[i] + 1]);
 	}
 	return AE_OK;
 }
@@ -552,7 +526,7 @@ int acpi_bus_generate_proc_event4(const char *device_class, const char *bus_id, 
 	if (!event_is_open)
 		return 0;
 
-	event = kzalloc(sizeof(struct acpi_bus_event), GFP_ATOMIC);
+	event = kmalloc(sizeof(struct acpi_bus_event), GFP_ATOMIC);
 	if (!event)
 		return -ENOMEM;
 
@@ -838,12 +812,6 @@ void __init acpi_early_init(void)
 
 	acpi_gbl_permanent_mmap = 1;
 
-	/*
-	 * If the machine falls into the DMI check table,
-	 * DSDT will be copied to memory
-	 */
-	dmi_check_system(dsdt_dmi_table);
-
 	status = acpi_reallocate_root_table();
 	if (ACPI_FAILURE(status)) {
 		printk(KERN_ERR PREFIX
@@ -936,14 +904,6 @@ static int __init acpi_bus_init(void)
 	}
 
 	/*
-	 * _PDC control method may load dynamic SSDT tables,
-	 * and we need to install the table handler before that.
-	 */
-	acpi_sysfs_init();
-
-	acpi_early_processor_set_pdc();
-
-	/*
 	 * Maybe EC region is required at bus_scan/acpi_get_devices. So it
 	 * is necessary to enable it as early as possible.
 	 */
@@ -1025,14 +985,15 @@ static int __init acpi_init(void)
 
 	/*
 	 * If the laptop falls into the DMI check table, the power state check
-	 * will be disabled in the course of device power transition.
+	 * will be disabled in the course of device power transistion.
 	 */
 	dmi_check_system(power_nocheck_dmi_table);
 
 	acpi_scan_init();
 	acpi_ec_init();
 	acpi_power_init();
-	acpi_debugfs_init();
+	acpi_system_init();
+	acpi_debug_init();
 	acpi_sleep_proc_init();
 	acpi_wakeup_device_init();
 	return result;

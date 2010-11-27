@@ -5,6 +5,16 @@
 obj-$(CONFIG_IPW2100) += ipw2x00/
 obj-$(CONFIG_IPW2200) += ipw2x00/
 
+obj-$(CONFIG_STRIP) += strip.o
+obj-$(CONFIG_ARLAN) += arlan.o 
+
+arlan-objs := arlan-main.o arlan-proc.o
+
+# Obsolete cards
+obj-$(CONFIG_WAVELAN)		+= wavelan.o
+obj-$(CONFIG_PCMCIA_NETWAVE)	+= netwave_cs.o
+obj-$(CONFIG_PCMCIA_WAVELAN)	+= wavelan_cs.o
+
 obj-$(CONFIG_HERMES)		+= orinoco/
 
 obj-$(CONFIG_AIRO)		+= airo.o
@@ -49,8 +59,8 @@ obj-$(CONFIG_ATH_COMMON)	+= ath/
 
 obj-$(CONFIG_MAC80211_HWSIM)	+= mac80211_hwsim.o
 
-obj-$(CONFIG_WL1251)	+= wl1251/
 obj-$(CONFIG_WL12XX)	+= wl12xx/
-obj-$(CONFIG_WL12XX_PLATFORM_DATA)	+= wl12xx/
 
 obj-$(CONFIG_IWM)	+= iwmc3200wifi/
+
+obj-$(CONFIG_BROADCOM_WIFI)	+= bcm4329/

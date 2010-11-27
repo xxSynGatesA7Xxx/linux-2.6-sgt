@@ -18,7 +18,7 @@
 #include <linux/kernel.h>
 #include <linux/irq.h>
 #include <linux/io.h>
-#include <linux/gpio.h>
+#include <mach/gpio.h>
 #include <plat/gpio-core.h>
 #include <plat/gpio-cfg.h>
 #include <plat/gpio-cfg-helpers.h>
@@ -165,6 +165,208 @@ static int samsung_gpiolib_4bit2_output(struct gpio_chip *chip,
 
 	return 0;
 }
+
+
+int s3c_gpio_slp_cfgpin(unsigned int pin, unsigned int config)
+{
+        struct s3c_gpio_chip *chip = s3c_gpiolib_getchip(pin);
+        void __iomem *reg;
+        unsigned long flags;
+        int offset;
+        u32 con;
+        int shift;
+
+        if (!chip)
+                return -EINVAL;
+
+	if((pin <= S5PV210_GPH3(7)) && (pin >= S5PV210_GPH0(0))) {
+                return -EINVAL;
+        }
+
+        if(config > S3C_GPIO_SLP_PREV)
+        {
+                 return -EINVAL;
+        }
+
+        reg = chip->base + 0x10;
+
+        offset = pin - chip->chip.base;
+        shift = offset * 2;
+
+        local_irq_save(flags);
+
+        con = __raw_readl(reg);
+        con &= ~(3 << shift);
+        con |= config << shift;
+         __raw_writel(con, reg);
+
+        local_irq_restore(flags);
+        return 0;
+}
+
+
+s3c_gpio_pull_t s3c_gpio_get_slp_cfgpin(unsigned int pin)
+{
+        struct s3c_gpio_chip *chip = s3c_gpiolib_getchip(pin);
+        void __iomem *reg;
+        unsigned long flags;
+        int offset;
+        u32 con;
+        int shift;
+
+        if (!chip)
+                return -EINVAL;
+
+	if((pin <= S5PV210_GPH3(7)) && (pin >= S5PV210_GPH0(0))) {
+                return -EINVAL;
+        }
+
+        reg = chip->base + 0x10;
+
+        offset = pin - chip->chip.base;
+        shift = offset * 2;
+
+        local_irq_save(flags);
+
+        con = __raw_readl(reg);
+        con >>= shift;
+        con &= 0x3;
+
+        local_irq_restore(flags);
+
+        return (__force s3c_gpio_pull_t)con;
+}
+
+
+int s3c_gpio_slp_setpull_updown(unsigned int pin, unsigned int config)
+{
+        struct s3c_gpio_chip *chip = s3c_gpiolib_getchip(pin);
+        void __iomem *reg;
+        unsigned long flags;
+        int offset;
+        u32 con;
+        int shift;
+
+        if (!chip)
+                return -EINVAL;
+
+	if((pin <= S5PV210_GPH3(7)) && (pin >= S5PV210_GPH0(0))) {
+                return -EINVAL;
+        }
+
+        if(config > S3C_GPIO_PULL_UP)
+        {
+                return -EINVAL;
+        }
+        reg = chip->base + 0x14;
+
+        offset = pin - chip->chip.base;
+        shift = offset * 2;
+
+        local_irq_save(flags);
+
+        con = __raw_readl(reg);
+        con &= ~(3 << shift);
+        con |= config << shift;
+        __raw_writel(con, reg);
+
+        local_irq_restore(flags);
+                           
+	return 0;
+}
+
+
+int s3c_gpio_set_drvstrength(unsigned int pin, unsigned int config)
+{
+        struct s3c_gpio_chip *chip = s3c_gpiolib_getchip(pin);
+        void __iomem *reg;
+        unsigned long flags;
+        int offset;
+        u32 con;
+        int shift;
+
+        if (!chip)
+                return -EINVAL;
+
+        if(config  > S3C_GPIO_DRVSTR_4X)
+        {
+                return -EINVAL;
+        }
+
+        reg = chip->base + 0x0c;
+
+        offset = pin - chip->chip.base;
+        shift = offset * 2; 
+
+        local_irq_save(flags);
+
+        con = __raw_readl(reg);
+        con &= ~(3 << shift);
+        con |= config << shift;
+
+        __raw_writel(con, reg);
+#ifdef  S5PC11X_ALIVEGPIO_STORE
+        con = __raw_readl(reg);
+#endif
+
+        local_irq_restore(flags);
+                           
+	return 0;
+}
+
+int s3c_gpio_set_slewrate(unsigned int pin, unsigned int config)
+{
+        struct s3c_gpio_chip *chip = s3c_gpiolib_getchip(pin);
+        void __iomem *reg;
+        unsigned long flags;
+        int offset;
+        u32 con;
+        int shift;
+
+        if (!chip)
+                return -EINVAL;
+
+        if(config > S3C_GPIO_SLEWRATE_SLOW)
+        {
+                return -EINVAL;
+        }
+
+        reg = chip->base + 0x0c;
+
+        offset = pin - chip->chip.base;
+        shift = offset; 
+
+        local_irq_save(flags);
+
+        con = __raw_readl(reg);
+        con &= ~(1<< shift);
+        con |= config << shift;
+
+        __raw_writel(con, reg);
+#ifdef  S5PC11X_ALIVEGPIO_STORE
+        con = __raw_readl(reg);
+#endif
+
+        local_irq_restore(flags);
+                           
+	return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 void __init samsung_gpiolib_add_4bit(struct s3c_gpio_chip *chip)
 {

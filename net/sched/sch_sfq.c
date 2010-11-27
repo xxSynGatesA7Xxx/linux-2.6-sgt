@@ -20,7 +20,6 @@
 #include <linux/ipv6.h>
 #include <linux/skbuff.h>
 #include <linux/jhash.h>
-#include <linux/slab.h>
 #include <net/ip.h>
 #include <net/netlink.h>
 #include <net/pkt_sched.h>
@@ -122,45 +121,35 @@ static unsigned sfq_hash(struct sfq_sched_data *q, struct sk_buff *skb)
 	switch (skb->protocol) {
 	case htons(ETH_P_IP):
 	{
-		const struct iphdr *iph;
-		int poff;
-
-		if (!pskb_network_may_pull(skb, sizeof(*iph)))
-			goto err;
-		iph = ip_hdr(skb);
-		h = (__force u32)iph->daddr;
-		h2 = (__force u32)iph->saddr ^ iph->protocol;
-		if (iph->frag_off & htons(IP_MF|IP_OFFSET))
-			break;
-		poff = proto_ports_offset(iph->protocol);
-		if (poff >= 0 &&
-		    pskb_network_may_pull(skb, iph->ihl * 4 + 4 + poff)) {
-			iph = ip_hdr(skb);
-			h2 ^= *(u32*)((void *)iph + iph->ihl * 4 + poff);
-		}
+		const struct iphdr *iph = ip_hdr(skb);
+		h = iph->daddr;
+		h2 = iph->saddr ^ iph->protocol;
+		if (!(iph->frag_off&htons(IP_MF|IP_OFFSET)) &&
+		    (iph->protocol == IPPROTO_TCP ||
+		     iph->protocol == IPPROTO_UDP ||
+		     iph->protocol == IPPROTO_UDPLITE ||
+		     iph->protocol == IPPROTO_SCTP ||
+		     iph->protocol == IPPROTO_DCCP ||
+		     iph->protocol == IPPROTO_ESP))
+			h2 ^= *(((u32*)iph) + iph->ihl);
 		break;
 	}
 	case htons(ETH_P_IPV6):
 	{
-		struct ipv6hdr *iph;
-		int poff;
-
-		if (!pskb_network_may_pull(skb, sizeof(*iph)))
-			goto err;
-		iph = ipv6_hdr(skb);
-		h = (__force u32)iph->daddr.s6_addr32[3];
-		h2 = (__force u32)iph->saddr.s6_addr32[3] ^ iph->nexthdr;
-		poff = proto_ports_offset(iph->nexthdr);
-		if (poff >= 0 &&
-		    pskb_network_may_pull(skb, sizeof(*iph) + 4 + poff)) {
-			iph = ipv6_hdr(skb);
-			h2 ^= *(u32*)((void *)iph + sizeof(*iph) + poff);
-		}
+		struct ipv6hdr *iph = ipv6_hdr(skb);
+		h = iph->daddr.s6_addr32[3];
+		h2 = iph->saddr.s6_addr32[3] ^ iph->nexthdr;
+		if (iph->nexthdr == IPPROTO_TCP ||
+		    iph->nexthdr == IPPROTO_UDP ||
+		    iph->nexthdr == IPPROTO_UDPLITE ||
+		    iph->nexthdr == IPPROTO_SCTP ||
+		    iph->nexthdr == IPPROTO_DCCP ||
+		    iph->nexthdr == IPPROTO_ESP)
+			h2 ^= *(u32*)&iph[1];
 		break;
 	}
 	default:
-err:
-		h = (unsigned long)skb_dst(skb) ^ (__force u32)skb->protocol;
+		h = (unsigned long)skb_dst(skb) ^ skb->protocol;
 		h2 = (unsigned long)skb->sk;
 	}
 
@@ -333,7 +322,7 @@ sfq_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	if (++sch->q.qlen <= q->limit) {
 		sch->bstats.bytes += qdisc_pkt_len(skb);
 		sch->bstats.packets++;
-		return NET_XMIT_SUCCESS;
+		return 0;
 	}
 
 	sfq_drop(sch);
@@ -507,24 +496,9 @@ nla_put_failure:
 	return -1;
 }
 
-static struct Qdisc *sfq_leaf(struct Qdisc *sch, unsigned long arg)
-{
-	return NULL;
-}
-
 static unsigned long sfq_get(struct Qdisc *sch, u32 classid)
 {
 	return 0;
-}
-
-static unsigned long sfq_bind(struct Qdisc *sch, unsigned long parent,
-			      u32 classid)
-{
-	return 0;
-}
-
-static void sfq_put(struct Qdisc *q, unsigned long cl)
-{
 }
 
 static struct tcf_proto **sfq_find_tcf(struct Qdisc *sch, unsigned long cl)
@@ -579,12 +553,8 @@ static void sfq_walk(struct Qdisc *sch, struct qdisc_walker *arg)
 }
 
 static const struct Qdisc_class_ops sfq_class_ops = {
-	.leaf		=	sfq_leaf,
 	.get		=	sfq_get,
-	.put		=	sfq_put,
 	.tcf_chain	=	sfq_find_tcf,
-	.bind_tcf	=	sfq_bind,
-	.unbind_tcf	=	sfq_put,
 	.dump		=	sfq_dump_class,
 	.dump_stats	=	sfq_dump_class_stats,
 	.walk		=	sfq_walk,

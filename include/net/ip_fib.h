@@ -86,7 +86,6 @@ struct fib_info {
 #ifdef CONFIG_IP_ROUTE_MULTIPATH
 	int			fib_power;
 #endif
-	struct rcu_head		rcu;
 	struct fib_nh		fib_nh[0];
 #define fib_dev		fib_nh[0].nh_dev
 };
@@ -145,22 +144,17 @@ struct fib_table {
 	struct hlist_node tb_hlist;
 	u32		tb_id;
 	int		tb_default;
+	int		(*tb_lookup)(struct fib_table *tb, const struct flowi *flp, struct fib_result *res);
+	int		(*tb_insert)(struct fib_table *, struct fib_config *);
+	int		(*tb_delete)(struct fib_table *, struct fib_config *);
+	int		(*tb_dump)(struct fib_table *table, struct sk_buff *skb,
+				     struct netlink_callback *cb);
+	int		(*tb_flush)(struct fib_table *table);
+	void		(*tb_select_default)(struct fib_table *table,
+					     const struct flowi *flp, struct fib_result *res);
+
 	unsigned char	tb_data[0];
 };
-
-extern int fib_table_lookup(struct fib_table *tb, const struct flowi *flp,
-			    struct fib_result *res, int fib_flags);
-extern int fib_table_insert(struct fib_table *, struct fib_config *);
-extern int fib_table_delete(struct fib_table *, struct fib_config *);
-extern int fib_table_dump(struct fib_table *table, struct sk_buff *skb,
-			  struct netlink_callback *cb);
-extern int fib_table_flush(struct fib_table *table);
-extern void fib_table_select_default(struct fib_table *table,
-				     const struct flowi *flp,
-				     struct fib_result *res);
-extern void fib_free_table(struct fib_table *tb);
-
-
 
 #ifndef CONFIG_IP_MULTIPLE_TABLES
 
@@ -188,11 +182,11 @@ static inline int fib_lookup(struct net *net, const struct flowi *flp,
 	struct fib_table *table;
 
 	table = fib_get_table(net, RT_TABLE_LOCAL);
-	if (!fib_table_lookup(table, flp, res, FIB_LOOKUP_NOREF))
+	if (!table->tb_lookup(table, flp, res))
 		return 0;
 
 	table = fib_get_table(net, RT_TABLE_MAIN);
-	if (!fib_table_lookup(table, flp, res, FIB_LOOKUP_NOREF))
+	if (!table->tb_lookup(table, flp, res))
 		return 0;
 	return -ENETUNREACH;
 }
@@ -255,6 +249,16 @@ static inline void fib_info_put(struct fib_info *fi)
 {
 	if (atomic_dec_and_test(&fi->fib_clntref))
 		free_fib_info(fi);
+}
+
+static inline void fib_res_put(struct fib_result *res)
+{
+	if (res->fi)
+		fib_info_put(res->fi);
+#ifdef CONFIG_IP_MULTIPLE_TABLES
+	if (res->r)
+		fib_rule_put(res->r);
+#endif
 }
 
 #ifdef CONFIG_PROC_FS

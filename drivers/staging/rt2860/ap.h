@@ -24,45 +24,55 @@
  *                                                                       *
  *************************************************************************
 
-Module Name:
-ap.h
+    Module Name:
+    ap.h
 
-Abstract:
-Miniport generic portion header file
+    Abstract:
+    Miniport generic portion header file
 
-Revision History:
-Who         When          What
---------    ----------    ----------------------------------------------
-Paul Lin    08-01-2002    created
-James Tan   09-06-2002    modified (Revise NTCRegTable)
-John Chang  12-22-2004    modified for RT2561/2661. merge with STA driver
+    Revision History:
+    Who         When          What
+    --------    ----------    ----------------------------------------------
+    Paul Lin    08-01-2002    created
+    James Tan   09-06-2002    modified (Revise NTCRegTable)
+    John Chang  12-22-2004    modified for RT2561/2661. merge with STA driver
 */
 #ifndef __AP_H__
 #define __AP_H__
 
-/* ap_wpa.c */
-void WpaStateMachineInit(struct rt_rtmp_adapter *pAd,
-			 struct rt_state_machine *Sm,
-			 OUT STATE_MACHINE_FUNC Trans[]);
+// ap_mlme.c
 
-#ifdef RTMP_MAC_USB
-void BeaconUpdateExec(void *SystemSpecific1,
-		      void *FunctionContext,
-		      void *SystemSpecific2, void *SystemSpecific3);
-#endif /* RTMP_MAC_USB // */
+#ifdef RT2870
+VOID BeaconUpdateExec(
+    IN PVOID SystemSpecific1,
+    IN PVOID FunctionContext,
+    IN PVOID SystemSpecific2,
+    IN PVOID SystemSpecific3);
+#endif // RT2870 //
 
-void RTMPSetPiggyBack(struct rt_rtmp_adapter *pAd, IN BOOLEAN bPiggyBack);
+VOID RTMPSetPiggyBack(
+	IN PRTMP_ADAPTER	pAd,
+	IN BOOLEAN			bPiggyBack);
 
-void MacTableReset(struct rt_rtmp_adapter *pAd);
+// ap.c
 
-struct rt_mac_table_entry *MacTableInsertEntry(struct rt_rtmp_adapter *pAd,
-				     u8 *pAddr,
-				     u8 apidx, IN BOOLEAN CleanAll);
+VOID MacTableReset(
+    IN  PRTMP_ADAPTER   pAd);
 
-BOOLEAN MacTableDeleteEntry(struct rt_rtmp_adapter *pAd,
-			    u16 wcid, u8 *pAddr);
+MAC_TABLE_ENTRY *MacTableInsertEntry(
+    IN  PRTMP_ADAPTER   pAd,
+    IN  PUCHAR          pAddr,
+	IN	UCHAR			apidx,
+	IN BOOLEAN	CleanAll);
 
-struct rt_mac_table_entry *MacTableLookup(struct rt_rtmp_adapter *pAd,
-								u8 *pAddr);
+BOOLEAN MacTableDeleteEntry(
+    IN  PRTMP_ADAPTER   pAd,
+	IN USHORT wcid,
+    IN  PUCHAR          pAddr);
 
-#endif /* __AP_H__ */
+MAC_TABLE_ENTRY *MacTableLookup(
+    IN  PRTMP_ADAPTER   pAd,
+    IN  PUCHAR          pAddr);
+
+#endif  // __AP_H__
+

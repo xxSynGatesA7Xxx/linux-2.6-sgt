@@ -33,14 +33,14 @@
 #define __ASM_ARM_REGS_SERIAL_H
 
 #define S3C24XX_VA_UART0      (S3C_VA_UART)
-#define S3C24XX_VA_UART1      (S3C_VA_UART + 0x4000 )
-#define S3C24XX_VA_UART2      (S3C_VA_UART + 0x8000 )
-#define S3C24XX_VA_UART3      (S3C_VA_UART + 0xC000 )
+#define S3C24XX_VA_UART1      (S3C_VA_UART + 0x400 )
+#define S3C24XX_VA_UART2      (S3C_VA_UART + 0x800 )
+#define S3C24XX_VA_UART3      (S3C_VA_UART + 0xC00 )
 
 #define S3C2410_PA_UART0      (S3C24XX_PA_UART)
-#define S3C2410_PA_UART1      (S3C24XX_PA_UART + 0x4000 )
-#define S3C2410_PA_UART2      (S3C24XX_PA_UART + 0x8000 )
-#define S3C2443_PA_UART3      (S3C24XX_PA_UART + 0xC000 )
+#define S3C2410_PA_UART1      (S3C24XX_PA_UART + 0x400 )
+#define S3C2410_PA_UART2      (S3C24XX_PA_UART + 0x800 )
+#define S3C2443_PA_UART3      (S3C24XX_PA_UART + 0xC00 )
 
 #define S3C2410_URXH	  (0x24)
 #define S3C2410_UTXH	  (0x20)
@@ -53,6 +53,9 @@
 #define S3C2410_UERSTAT	  (0x14)
 #define S3C2410_UFSTAT	  (0x18)
 #define S3C2410_UMSTAT	  (0x1C)
+#define S3C2410_UBRDIV	  (0x28)
+#define S3C2410_UDIVSLOT  (0x2C)
+#define S3C2410_UINTMSK   (0x38)
 
 #define S3C2410_LCON_CFGMASK	  ((0xF<<3)|(0x3))
 
@@ -194,6 +197,11 @@
 #define S3C64XX_UINTSP		0x34
 #define S3C64XX_UINTM		0x38
 
+/* S5V210 interrupt registers. */
+#define S5P_UINTP		0x30
+#define S5P_UINTSP		0x34
+#define S5P_UINTM		0x38
+
 /* Following are specific to S5PV210 and S5P6442 */
 #define S5PV210_UCON_CLKMASK	(1<<10)
 #define S5PV210_UCON_PCLK	(0<<10)
@@ -257,9 +265,11 @@ struct s3c2410_uartcfg {
 	unsigned char	   hwport;	 /* hardware port number */
 	unsigned char	   unused;
 	unsigned short	   flags;
+#if !defined(CONFIG_CPU_S5PV210)
 	upf_t		   uart_flags;	 /* default uart flags */
-
-	unsigned int	   has_fracval;
+#else
+        unsigned long	   uart_flags;      /* default uart flags */
+#endif
 
 	unsigned long	   ucon;	 /* value of ucon for port */
 	unsigned long	   ulcon;	 /* value of ulcon for port */

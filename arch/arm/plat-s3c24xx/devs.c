@@ -20,8 +20,6 @@
 #include <linux/serial_core.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
-#include <linux/slab.h>
-#include <linux/string.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -39,7 +37,8 @@
 #include <plat/devs.h>
 #include <plat/cpu.h>
 #include <plat/regs-spi.h>
-#include <plat/ts.h>
+
+#include <mach/ts.h>
 
 /* Serial port registrations */
 
@@ -149,14 +148,10 @@ void __init s3c24xx_fb_set_platdata(struct s3c2410fb_mach_info *pd)
 {
 	struct s3c2410fb_mach_info *npd;
 
-	npd = kmemdup(pd, sizeof(*npd), GFP_KERNEL);
+	npd = kmalloc(sizeof(*npd), GFP_KERNEL);
 	if (npd) {
+		memcpy(npd, pd, sizeof(*npd));
 		s3c_device_lcd.dev.platform_data = npd;
-		npd->displays = kmemdup(pd->displays,
-			sizeof(struct s3c2410fb_display) * npd->num_displays,
-			GFP_KERNEL);
-		if (!npd->displays)
-			printk(KERN_ERR "no memory for LCD display data\n");
 	} else {
 		printk(KERN_ERR "no memory for LCD platform data\n");
 	}
@@ -234,6 +229,32 @@ void __init s3c24xx_udc_set_platdata(struct s3c2410_udc_mach_info *pd)
 	}
 }
 
+
+/* Watchdog */
+
+static struct resource s3c_wdt_resource[] = {
+	[0] = {
+		.start = S3C24XX_PA_WATCHDOG,
+		.end   = S3C24XX_PA_WATCHDOG + S3C24XX_SZ_WATCHDOG - 1,
+		.flags = IORESOURCE_MEM,
+	},
+	[1] = {
+		.start = IRQ_WDT,
+		.end   = IRQ_WDT,
+		.flags = IORESOURCE_IRQ,
+	}
+
+};
+
+struct platform_device s3c_device_wdt = {
+	.name		  = "s3c2410-wdt",
+	.id		  = -1,
+	.num_resources	  = ARRAY_SIZE(s3c_wdt_resource),
+	.resource	  = s3c_wdt_resource,
+};
+
+EXPORT_SYMBOL(s3c_device_wdt);
+
 /* IIS */
 
 static struct resource s3c_iis_resource[] = {
@@ -247,7 +268,7 @@ static struct resource s3c_iis_resource[] = {
 static u64 s3c_device_iis_dmamask = 0xffffffffUL;
 
 struct platform_device s3c_device_iis = {
-	.name		  = "s3c24xx-iis",
+	.name		  = "s3c2410-iis",
 	.id		  = -1,
 	.num_resources	  = ARRAY_SIZE(s3c_iis_resource),
 	.resource	  = s3c_iis_resource,
@@ -258,21 +279,6 @@ struct platform_device s3c_device_iis = {
 };
 
 EXPORT_SYMBOL(s3c_device_iis);
-
-/* ASoC PCM DMA */
-
-static u64 s3c_device_audio_dmamask = 0xffffffffUL;
-
-struct platform_device s3c_device_pcm = {
-	.name		  = "s3c24xx-pcm-audio",
-	.id		  = -1,
-	.dev              = {
-		.dma_mask = &s3c_device_audio_dmamask,
-		.coherent_dma_mask = 0xffffffffUL
-	}
-};
-
-EXPORT_SYMBOL(s3c_device_pcm);
 
 /* RTC */
 
@@ -331,6 +337,14 @@ struct platform_device s3c_device_adc = {
 	.resource	  = s3c_adc_resource,
 };
 
+/* HWMON */
+
+struct platform_device s3c_device_hwmon = {
+	.name		= "s3c-hwmon",
+	.id		= -1,
+	.dev.parent	= &s3c_device_adc.dev,
+};
+
 /* SDI */
 
 static struct resource s3c_sdi_resource[] = {
@@ -356,7 +370,7 @@ struct platform_device s3c_device_sdi = {
 
 EXPORT_SYMBOL(s3c_device_sdi);
 
-void __init s3c24xx_mci_set_platdata(struct s3c24xx_mci_pdata *pdata)
+void s3c24xx_mci_set_platdata(struct s3c24xx_mci_pdata *pdata)
 {
 	struct s3c24xx_mci_pdata *npd;
 
@@ -496,30 +510,19 @@ static struct resource s3c_ac97_resource[] = {
 	},
 };
 
+static u64 s3c_device_ac97_dmamask = 0xffffffffUL;
+
 struct platform_device s3c_device_ac97 = {
 	.name		  = "s3c-ac97",
 	.id		  = -1,
 	.num_resources	  = ARRAY_SIZE(s3c_ac97_resource),
 	.resource	  = s3c_ac97_resource,
 	.dev              = {
-		.dma_mask = &s3c_device_audio_dmamask,
+		.dma_mask = &s3c_device_ac97_dmamask,
 		.coherent_dma_mask = 0xffffffffUL
 	}
 };
 
 EXPORT_SYMBOL(s3c_device_ac97);
-
-/* ASoC I2S */
-
-struct platform_device s3c2412_device_iis = {
-	.name		  = "s3c2412-iis",
-	.id		  = -1,
-	.dev              = {
-		.dma_mask = &s3c_device_audio_dmamask,
-		.coherent_dma_mask = 0xffffffffUL
-	}
-};
-
-EXPORT_SYMBOL(s3c2412_device_iis);
 
 #endif // CONFIG_CPU_S32440
