@@ -59,7 +59,7 @@ include/generated
 
 # stgit generated dirs
 patches-*
-
+arm-2009q3*
 # quilt's files
 patches
 series
