@@ -13,6 +13,10 @@
 	#define dmsg(arg,...) 	{}
 #endif
 
+#ifndef CONFIG_TARGET_LOCALE_SPR        //for only VZW
+#define _SUPPORT_SAMSUNG_AUTOINSTALLER_
+#endif
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /* MODEM USB_SEL Pin control */
@@ -92,7 +96,11 @@ static u8 uart_message[6];
 static u8 usb_message[5];
 static int factoryresetstatus=0;
 
+#ifdef CONFIG_TARGET_LOCALE_VZW
+static int uart_current_owner = 0;
+#else
 static int uart_current_owner = 1;
+#endif
 static int g_tethering;
 static int mtpinitstatus=0;
 static int askinitstatus=0;
@@ -835,6 +843,42 @@ static ssize_t ID_switch_store(struct device *dev, struct device_attribute *attr
 
 static DEVICE_ATTR(IDSwitch, S_IRUGO |S_IWUGO | S_IRUSR | S_IWUSR, ID_switch_show, ID_switch_store);
 
+#ifdef _SUPPORT_SAMSUNG_AUTOINSTALLER_
+static int kies_status = 0;
+static ssize_t KiesStatus_switch_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	if(kies_status == 1)
+		return sprintf(buf, "%s\n", "START");
+	else if( kies_status == 2)
+		return sprintf(buf, "%s\n", "STOP");
+    else
+        return sprintf(buf, "%s\n", "INIT");
+}
+
+static ssize_t KiesStatus_switch_store(struct device *dev, struct device_attribute *attr,	const char *buf, size_t size)
+{
+    dmsg("buf=%s\n", buf);
+
+    if (strncmp(buf, "START", 5) == 0 )
+    {
+        kies_status = 1;
+    }
+	else if (strncmp(buf, "STOP", 4) == 0)
+	{
+	    kies_status = 2;
+        UsbIndicator(2);
+	}
+    else if (strncmp(buf, "INIT", 4) == 0 )
+    {
+        kies_status = 0;
+    }
+
+    return size;
+}
+
+static DEVICE_ATTR(KiesStatus, S_IRUGO |S_IWUGO | S_IRUSR | S_IWUSR, KiesStatus_switch_show, KiesStatus_switch_store);
+#endif /* _SUPPORT_SAMSUNG_AUTOINSTALLER_ */
+
 // TODO : remove this.
 int  FSA9480_PMIC_CP_USB(void)
 {
@@ -860,7 +904,7 @@ static void connectivity_switching_init(struct work_struct *ignored)
 	int lpm_mode_check = charging_mode_get();
 	switch_sel = 0;
 
-	dmsg("\n");
+	dmsg("called\n");
 
 	if (sec_get_param_value) {
 		sec_get_param_value(__SWITCH_SEL, &switch_sel);
@@ -912,6 +956,8 @@ static void connectivity_switching_init(struct work_struct *ignored)
 				Ap_Cp_Switch_Config(AP_USB_MODE);
 			}
 			else {
+                Ap_Cp_Switch_Config(AP_USB_MODE);
+                
 				Ap_Cp_Switch_Config(CP_USB_MODE);	
 				usb_switching_value_update(SWITCH_MODEM);
 			}
@@ -937,7 +983,15 @@ static void connectivity_switching_init(struct work_struct *ignored)
 		usb_switch_select(USBSTATUS_SAMSUNG_KIES);
 		mtp_mode_on = 1;
 		ap_usb_power_on(0);
-		UsbMenuSelStore(0);	
+#ifdef CONFIG_TARGET_LOCALE_VZW
+    #ifdef _SUPPORT_SAMSUNG_AUTOINSTALLER_
+		UsbMenuSelStore(0);
+    #else
+        UsbMenuSelStore(2);
+    #endif
+#else
+        UsbMenuSelStore(0);
+#endif /* CONFIG_TARGET_LOCALE_VZW */
 	}
 	else {
 		if(usb_sel) {
@@ -979,6 +1033,11 @@ static void connectivity_switching_init(struct work_struct *ignored)
 	}
     else {
 		s3c_usb_cable(1);
+		dmsg("askon_sel : %d\n", askon_sel);
+
+		if(askon_sel)
+			indicator_dev.state = 0;
+		else
         indicator_dev.state = 1;
     }
 
@@ -1077,6 +1136,11 @@ static int user_switch_create_files(void)
 
 	if (device_create_file(switch_dev, &dev_attr_tethering) < 0)
 		dmsg("Failed to create device file(%s)!\n", dev_attr_tethering.attr.name);
+
+#ifdef _SUPPORT_SAMSUNG_AUTOINSTALLER_
+	if (device_create_file(switch_dev, &dev_attr_KiesStatus) < 0)
+		dmsg("Failed to create device file(%s)!\n", dev_attr_tethering.attr.name);
+#endif 
 
 	return 0;
 }

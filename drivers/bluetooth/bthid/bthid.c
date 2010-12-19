@@ -143,7 +143,7 @@ static int bthid_release(struct inode *inode, struct file *file)
         {
             kfree(p_dev->hid->driver_data);
         }
-
+        
         hid_destroy_device(p_dev->hid);
         p_dev->hid = NULL;
     }

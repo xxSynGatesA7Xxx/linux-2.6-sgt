@@ -1014,8 +1014,8 @@ int mmc_resume_bus(struct mmc_host *host)
 #ifdef CONFIG_MACH_S5PC110_P1
 	if (!err) {
 #endif /* CONFIG_MACH_S5PC110_P1 */
-		if (host->bus_ops->detect && !host->bus_dead)
-			host->bus_ops->detect(host);
+	if (host->bus_ops->detect && !host->bus_dead)
+		host->bus_ops->detect(host);
 #ifdef CONFIG_MACH_S5PC110_P1
 	} else {
 		printk(KERN_WARNING "%s: error %d during resume "
@@ -1398,7 +1398,7 @@ int mmc_resume_host(struct mmc_host *host)
 {
 	int err = 0;
 
-	mmc_bus_get(host);	
+	mmc_bus_get(host);
 
 	if (host->bus_resume_flags & MMC_BUSRESUME_MANUAL_RESUME) {
 		host->bus_resume_flags |= MMC_BUSRESUME_NEEDS_RESUME;
@@ -1408,7 +1408,7 @@ int mmc_resume_host(struct mmc_host *host)
 
 	if (host->bus_ops && !host->bus_dead) {
 		if (!host->card || host->card->type != MMC_TYPE_SDIO)
-			mmc_power_up(host);		
+			mmc_power_up(host);
 		mmc_select_voltage(host, host->ocr);
 		BUG_ON(!host->bus_ops->resume);
 		err = host->bus_ops->resume(host);

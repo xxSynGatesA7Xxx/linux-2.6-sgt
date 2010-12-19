@@ -192,7 +192,7 @@ void kernel_sec_set_upload_cause(kernel_sec_upload_cause_type uploadType)
 {
 	gkernel_sec_upload_cause=uploadType;
 	unsigned int temp;
-
+	
     switch (uploadType){
         case UPLOAD_CAUSE_INIT:
             printk(KERN_EMERG"[DBG] upload cause : UPLOAD_CAUSE_INIT\n");
@@ -461,11 +461,11 @@ void kernel_sec_hw_reset(bool bSilentReset)
 {
 //	Ap_Cp_Switch_Config(0);
 
-	if (bSilentReset || (KERNEL_SEC_DEBUG_LEVEL_LOW == kernel_sec_get_debug_level()))
-	{
-		kernel_sec_clear_upload_magic_number();
-		printk(KERN_EMERG "(kernel_sec_hw_reset) Upload Magic Code is cleared for silet reset.\n");
-	}
+    	if (bSilentReset || (KERNEL_SEC_DEBUG_LEVEL_LOW == kernel_sec_get_debug_level()))
+    	{
+    		kernel_sec_clear_upload_magic_number();
+    		printk(KERN_EMERG "(kernel_sec_hw_reset) Upload Magic Code is cleared for silet reset.\n");
+    	}
 
 	printk(KERN_EMERG "(kernel_sec_hw_reset) %s\n", gkernel_sec_build_info);
 	

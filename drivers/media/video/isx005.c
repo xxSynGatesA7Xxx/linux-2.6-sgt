@@ -62,10 +62,10 @@ static int gLowLight = 0;
 static int gLowLight_flash = 0;
 static int gLowLight_flash_second = 0;
 static int gCurrentScene = SCENE_MODE_NONE;
-static int gIsoCondition = 0; //kidggang - About techwin temp test binay
+static int gIsoCondition = 0; //About techwin
 static int flash_mode = 1; //default is FLASH OFF
 static int flash_check = 0; //default is FLASH OFF - Auto on/off
-static int preview_ratio = 16;//zzangdol
+static int preview_ratio = 16;
 static int g_ctrl_entered = 0;
 static int first_af_start = 0;
 
@@ -556,7 +556,7 @@ static inline int isx005_i2c_read_multi(struct i2c_client *client,
 	}
 
 	/*
-	 * [Arun c]Data comes in Little Endian in parallel mode; So there
+	 * Data comes in Little Endian in parallel mode; So there
 	 * is no need for byte swapping here
 	 */
 	*data = *(unsigned long *)(&buf);
@@ -607,7 +607,7 @@ static inline int isx005_i2c_read(struct i2c_client *client,
 	}
 
 	/*
-	 * [Arun c]Data comes in Little Endian in parallel mode; So there
+	 * Data comes in Little Endian in parallel mode; So there
 	 * is no need for byte swapping here
 	 */
 	*data = *(unsigned short *)(&buf);
@@ -643,7 +643,7 @@ static inline int isx005_i2c_write_multi(struct i2c_client *client, unsigned sho
 	buf[1] = addr & 0xff;	
 
 	/* 
-	 * [Arun c]Data should be written in Little Endian in parallel mode; So there
+	 * Data should be written in Little Endian in parallel mode; So there
 	 * is no need for byte swapping here
 	 */
 	if(w_len == 1)
@@ -1665,7 +1665,7 @@ static int isx005_set_capture_start(struct v4l2_subdev *sd, struct v4l2_control 
 		}
 		else
 		{
-			//When manual ISO is setted, Not lowLight capture. //kidggang - About techwin temp test binay
+			//When manual ISO is setted, Not lowLight capture. //About techwin
 			isx005_msg(&client->dev, "%s: Low Light\n", __func__);
 			if(gIsoCondition == 0)
 			{
@@ -2482,13 +2482,13 @@ static int isx005_set_iso(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 		return -EIO;
 	}
 	
-	gIsoCondition = ctrl->value; //kidggang - About techwin temp test binay
+	gIsoCondition = ctrl->value; //About techwin
 	
 	return 0;
 }
 	
 static DEFINE_MUTEX(af_cancel_op);
-/* GAUDI Project([arun.c@samsung.com]) 2010.05.19. [Implemented AF cancel] */
+/* P1 Project 2010.05.19. [Implemented AF cancel] */
 static int isx005_set_auto_focus(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -4398,7 +4398,6 @@ static int isx005_init(struct v4l2_subdev *sd, u32 val)
 		isx005_msg(&client->dev, "%s: i2c_read --- read_value_2 == 0x%x \n", __func__, read_value_2);
 		msleep(10);
 		/*
-		 * Arun c
 		 * When the esd error occures during init the while loop never returns
 		 * so keep a count of the loops
 		 */

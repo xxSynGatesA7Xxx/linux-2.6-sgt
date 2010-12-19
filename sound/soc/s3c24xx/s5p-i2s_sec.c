@@ -131,6 +131,9 @@ static void s5p_snd_txctrl(int on)
 	iismod = readl(s5p_i2s0_regs + S3C2412_IISMOD);
 	pr_debug("%s: On=%d . IIS: CON=%x MOD=%x \n", __func__,on, iiscon, iismod);
 
+#ifdef CONFIG_TARGET_LOCALE_KOR
+    udelay(15); 
+#endif
 
 	if (on) {
 		iiscon |= S3C2412_IISCON_IIS_ACTIVE;
@@ -187,20 +190,22 @@ static void s5p_snd_txctrl(int on)
 		}
 
 #if 1 //GNUX@2010.09.20 : avoid headset pop-up noise
+#ifndef CONFIG_TARGET_LOCALE_KOR
 		if(get_headset_status())
+#endif		
 		{
-			// Flush I2S FIFO
-			iisfic = readl(s5p_i2s0_regs + S5P_IISFICS);
-			iisfic |= S3C2412_IISFIC_TXFLUSH;
-			writel(iisfic, s5p_i2s0_regs + S5P_IISFICS);
+		// Flush I2S FIFO
+		iisfic = readl(s5p_i2s0_regs + S5P_IISFICS);
+		iisfic |= S3C2412_IISFIC_TXFLUSH;
+		writel(iisfic, s5p_i2s0_regs + S5P_IISFICS);
 
-			do {
-				cpu_relax();
-			} while ((__raw_readl(s5p_i2s0_regs + S5P_IISFICS) >> 8) & 0x7f);
+		do {
+			cpu_relax();
+		} while ((__raw_readl(s5p_i2s0_regs + S5P_IISFICS) >> 8) & 0x7f);
 
-			iisfic = readl(s5p_i2s0_regs + S5P_IISFICS);
-			iisfic &= ~S3C2412_IISFIC_TXFLUSH;
-			writel(iisfic, s5p_i2s0_regs + S5P_IISFICS);
+		iisfic = readl(s5p_i2s0_regs + S5P_IISFICS);
+		iisfic &= ~S3C2412_IISFIC_TXFLUSH;
+		writel(iisfic, s5p_i2s0_regs + S5P_IISFICS);
 		}
 #endif
 

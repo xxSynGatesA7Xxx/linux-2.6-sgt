@@ -2642,7 +2642,6 @@ static unsigned long s5k6aafx_common[] ={
 #endif
 0x0F120001,  //REG_SF_USER_FlickerQuantChanged
 
-
 //////////////////////////
 // Basic Clock setting //
 //////////////////////////

@@ -117,7 +117,7 @@ config TARGET_LOCALE_USAGSM
 	bool "USAGSM"
 	help
 	  Support USAGSM Board
-
+	  
 endchoice
 
 config TARGET_LOCALE_LTN

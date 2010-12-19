@@ -1,3 +1,8 @@
+
+ifeq ($(X_BUILD_LOCALE),P1_SPR)
+	EXTRA_CFLAGS		+= -DCONFIG_TARGET_LOCALE_SPR
+endif
+
 # Switch Class Driver
 obj-$(CONFIG_SWITCH)		+= switch_class.o
 obj-$(CONFIG_SWITCH_GPIO)	+= switch_gpio.o

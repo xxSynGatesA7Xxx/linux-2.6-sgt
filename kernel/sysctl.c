@@ -1094,7 +1094,7 @@ static struct ctl_table vm_table[] = {
 		.procname	= "dirty_background_ratio",
 		.data		= &dirty_background_ratio,
 		.maxlen		= sizeof(dirty_background_ratio),
-		.mode		= 0644,
+		.mode		= 0777,
 		.proc_handler	= &dirty_background_ratio_handler,
 		.strategy	= &sysctl_intvec,
 		.extra1		= &zero,
@@ -1142,7 +1142,7 @@ static struct ctl_table vm_table[] = {
 		.procname	= "dirty_expire_centisecs",
 		.data		= &dirty_expire_interval,
 		.maxlen		= sizeof(dirty_expire_interval),
-		.mode		= 0644,
+		.mode		= 0777,
 		.proc_handler	= &proc_dointvec,
 	},
 	{

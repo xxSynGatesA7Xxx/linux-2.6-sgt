@@ -8,6 +8,10 @@
 #include <mach/max8998_function.h>
 #include <mach/fsa9480_i2c.h>
 
+#if defined(CONFIG_TARGET_LOCALE_VZW) || defined(CONFIG_TARGET_LOCALE_SPR) 
+#include <linux/kernel_sec_common.h>
+#endif
+
 //////////////////////////////////////////////////////////////////////////
 extern void uart_remove_switch_state(void);
 extern void uart_insert_switch_state(void);
@@ -568,7 +572,7 @@ static void FSA9480_ReadIntRegister(struct work_struct * work)
 
 	 fsa9480_read( REGISTER_DEVICETYPE2, &device2);
 
-	usb_state = (device2 << 8) | (device1 << 0);
+	 usb_state = (device2 << 8) | (device1 << 0);
 
 	if((interrupt1 & FSA9480_INT1_ATTACH) ||
 		(FSA9480_Get_JIG_Status() && maxim_lpm_chg_status()))
@@ -671,8 +675,29 @@ static void fsa9480_chip_init(void)
 {
 	 u8 data = 0;
 
-//	iks.kim : fsa9480 reset blocked temporarily (charger detection problem)
-//	fsa9480_write( HIDDEN_REGISTER_MANUAL_OVERRDES1, 0x01); //RESET
+//Enable this code if the below fsa9480_write() becomes active.
+//and make a synch with p1.c of SBL.
+#if 0// def CONFIG_KERNEL_DEBUG_SEC
+#if defined(CONFIG_TARGET_LOCALE_VZW) || defined(CONFIG_TARGET_LOCALE_SPR) 
+	u8 skip_dummy = 0;
+
+	unsigned int upload_code = __raw_readl(S5P_INFORM6);
+	if((upload_code & KERNEL_SEC_UPLOAD_CAUSE_MASK) == BLK_UART_MSG_FOR_FACTRST_2ND_ACK) {
+		skip_dummy = 1;
+		upload_code &= (~KERNEL_SEC_UPLOAD_CAUSE_MASK);
+		__raw_writel(upload_code , S5P_INFORM6);
+	}
+
+	if(skip_dummy == 0) {
+        //iks.kim : fsa9480 reset blocked temporarily (charger detection problem)
+		//fsa9480_write(&fsa9480_i2c_client, HIDDEN_REGISTER_MANUAL_OVERRDES1, 0x01); //RESET
+	}
+#endif
+#endif //CONFIG_KERNEL_DEBUG_SEC
+
+
+     //iks.kim : fsa9480 reset blocked temporarily (charger detection problem)
+	 //fsa9480_write(&fsa9480_i2c_client, HIDDEN_REGISTER_MANUAL_OVERRDES1, 0x01); //RESET
 
 	 mdelay(10);
 
@@ -693,6 +718,11 @@ static void fsa9480_chip_init(void)
 	 mdelay(10);
 
 	 fsa9480_read( REGISTER_DEVICETYPE2, &fsa9480_device2);
+
+#ifdef CONFIG_TARGET_LOCALE_VZW
+    /* update usb state */
+    usb_state = (fsa9480_device2 << 8) | (fsa9480_device1 << 0);
+#endif
 	 
 }
 

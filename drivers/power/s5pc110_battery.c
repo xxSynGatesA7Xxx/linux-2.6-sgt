@@ -759,45 +759,128 @@ static int s3c_get_bat_vol(struct power_supply *bat_ps)
 }
 #else /* __FUEL_GAUGES_IC__ */
 
+static int check_start_vol = 0;
+static int low_batt_comp_cnt[3][2] = { {0, 0}, {0, 0}, {0, 0} };
+
+static int Over1A_Level1_Threshold = 0;  // Over 1A (1%)
+static int Over1A_Level3_Threshold = 0;  // Over 1A (3%)
+static int Under1A_Level1_Threshold = 0;  // Under 1A (1%)
+static int Under1A_Level3_Threshold = 0;  // Under 1A (3%)
+static int Under500mA_level1_Threshold = 0;  // Under 500mA (1%)
+static int Under500mA_level3_Threshold = 0;  // Under 500mA (3%)
+
+static void add_low_batt_comp_cnt(int range, int level)
+{
+	int i = 0;
+	int j = 0;
+
+	// Increase the requested count value, and reset others.
+	low_batt_comp_cnt[range-1][level/2] ++;
+
+	for(i = 0; i < 3; i++) {
+		for(j = 0; j < 2; j++) {
+			if(i == range-1 && j == level/2)
+				continue;  // keep the count value.
+			else
+				low_batt_comp_cnt[i][j] = 0;  // reset
+		}
+	}
+}
+
+static int check_low_batt_comp_condtion(int* nLevel)
+{
+	int i = 0;
+	int j = 0;
+	int ret = 0;
+
+	for(i = 0; i < 3; i++) {
+		for(j = 0; j < 2; j++) {
+			if(low_batt_comp_cnt[i][j] >= 3)
+			{
+				printk("Count Array : [0,0]=%d, [0,1]=%d, [1,0]=%d, [1,1]=%d, [2,0]=%d, [2,1]=%d\n",
+					low_batt_comp_cnt[0][0], low_batt_comp_cnt[0][1], low_batt_comp_cnt[1][0],
+					low_batt_comp_cnt[1][1], low_batt_comp_cnt[2][0], low_batt_comp_cnt[2][1]);
+				ret = 1;
+				*nLevel = j*2 + 1;  // 0->1%, 1->3%
+				break;
+			}
+		}
+	}
+
+	return ret;
+}
+
 //#ifdef CONFIG_TARGET_LOCALE_KOR
 static int s3c_low_batt_compensation(int fg_soc,int fg_vcell, int fg_current)
 {
 	int nRet=0;
 	int fg_avg_current=0;
+	int new_level = 0;
 
 	fg_avg_current=fg_read_avg_current();
 	
+	if(!check_start_vol)  // If not initialized yet, then init threshold values.
+	{
+		if(battery_type == SDI_BATTERY_TYPE) {
+			check_start_vol = 3550;  // Under 3.55V
+			Over1A_Level1_Threshold = SDI_Range3_1_Threshold;
+			Over1A_Level3_Threshold = SDI_Range3_3_Threshold;
+			Under1A_Level1_Threshold = SDI_Range2_1_Threshold;
+			Under1A_Level3_Threshold = SDI_Range2_3_Threshold;
+			Under500mA_level1_Threshold = SDI_Range1_1_Threshold;
+			Under500mA_level3_Threshold = SDI_Range1_3_Threshold;
+		}
+		else if(battery_type == ATL_BATTERY_TYPE) {
+			check_start_vol = 3450;  // Under 3.45V
+			Over1A_Level1_Threshold = ATL_Range3_1_Threshold;
+			Over1A_Level3_Threshold = ATL_Range3_3_Threshold;
+			Under1A_Level1_Threshold = ATL_Range2_1_Threshold;
+			Under1A_Level3_Threshold = ATL_Range2_3_Threshold;
+			Under500mA_level1_Threshold = ATL_Range1_1_Threshold;
+			Under500mA_level3_Threshold = ATL_Range1_3_Threshold;
+		}
+	}
+	
 	/////////////////////////////////////////////////////////////////
 	if(!s3c_bat_info.bat_info.charging_enabled && !low_batt_comp_flag
-		&& (fg_vcell <= 3700))  // Not charging, flag is none, Under 3.7V
+		&& (fg_vcell <= check_start_vol))  // Not charging, flag is none, Under 3.7V
 	{
 		if(fg_avg_current < -1000)  // I > 1A
 		{		
-			if(fg_soc >= 2 && fg_vcell < 3360) {  // 1%
-				fg_low_batt_compensation(1);
+			if(fg_soc >= 2 && fg_vcell < Over1A_Level1_Threshold) {  // 1%
+				add_low_batt_comp_cnt(3, 1);
+//				fg_low_batt_compensation(1);
 			}
-			else if(fg_soc >= 4 && fg_vcell < 3450) {  // 3%
-				fg_low_batt_compensation(3);
+			else if(fg_soc >= 4 && fg_vcell < Over1A_Level3_Threshold) {  // 3%
+				add_low_batt_comp_cnt(3, 3);
+//				fg_low_batt_compensation(3);
 			}
 		}
 		else if(fg_avg_current >= -1000 && fg_avg_current < -500)  // 0.5A < I <= 1A
 		{
-			if(fg_soc >= 2 && fg_vcell < 3408) {  // 1%
-				fg_low_batt_compensation(1);
+			if(fg_soc >= 2 && fg_vcell < Under1A_Level1_Threshold) {  // 1%
+				add_low_batt_comp_cnt(2, 1);
+//				fg_low_batt_compensation(1);
 			}
-			else if(fg_soc >= 4 && fg_vcell < 3463) {  // 3%
-				fg_low_batt_compensation(3);
+			else if(fg_soc >= 4 && fg_vcell < Under1A_Level3_Threshold) {  // 3%
+				add_low_batt_comp_cnt(2, 3);
+//				fg_low_batt_compensation(3);
 			}
 		}
 		else if(fg_avg_current >= -500 && fg_avg_current < 0)  // I <= 0.5A
 		{
-			if(fg_soc >= 2 && fg_vcell < 3456) {  // 1%
-				fg_low_batt_compensation(1);
+			if(fg_soc >= 2 && fg_vcell < Under500mA_level1_Threshold) {  // 1%
+				add_low_batt_comp_cnt(1, 1);
+//				fg_low_batt_compensation(1);
 			}
-			else if(fg_soc >= 4 && fg_vcell < 3530) {  // 3%
-				fg_low_batt_compensation(3);
+			else if(fg_soc >= 4 && fg_vcell < Under500mA_level3_Threshold) {  // 3%
+				add_low_batt_comp_cnt(1, 3);
+//				fg_low_batt_compensation(3);
 			}
 		}
+
+		if(check_low_batt_comp_condtion(&new_level))
+			fg_low_batt_compensation(new_level);
 
 		// if compensation finished, then read SOC again!!
 		if(low_batt_comp_flag)
@@ -827,8 +910,8 @@ static int s3c_get_bat_level(struct power_supply *bat_ps)
 //#endif 
 
 	static int cnt = 0;
-#ifdef CONFIG_TARGET_LOCALE_KOR
-	static int cnt_backup = 0;
+#ifdef CONFIG_TARGET_LOCALE_KOR 
+	static int cnt_backup = 0;	
 #endif
 
 	if(!fuel_guage_init)
@@ -939,7 +1022,8 @@ static int s3c_get_bat_level(struct power_supply *bat_ps)
 //#ifdef CONFIG_TARGET_LOCALE_KOR
 	/*	Checks vcell level and tries to compensate SOC if needed.
 	*/
-	fg_soc=s3c_low_batt_compensation(fg_soc,fg_vcell,fg_current);
+	 if(!FSA9480_Get_JIG_Status())  // If jig cable is connected, then skip low batt compensation check.
+		fg_soc=s3c_low_batt_compensation(fg_soc,fg_vcell,fg_current);
 //#endif
 
 #ifdef __CHECK_CHG_CURRENT__
@@ -1117,8 +1201,12 @@ static bool check_UV_charging_case(void)
 {
 	int fg_vcell = fg_read_vcell();
 	int fg_current = fg_read_current();
-	int threshold = 3400 + ((fg_current * 17) / 100);
-//	printk("%s: vcell (%d), EDV + 0.17 * current (%d)\n", __func__, fg_vcell, threshold);
+	int threshold = 0;
+
+	if(battery_type == SDI_BATTERY_TYPE)
+		threshold = 3300 + ((fg_current * 17) / 100);
+	else if(battery_type == ATL_BATTERY_TYPE)
+		threshold = 3300 + ((fg_current * 13) / 100);
 
 	if(fg_vcell <= threshold)
 		return TRUE;

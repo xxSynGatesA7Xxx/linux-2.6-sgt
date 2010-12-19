@@ -394,22 +394,22 @@ osl_pktget_static(osl_t *osh, uint len)
 
 	if (len <= DHD_SKB_2PAGE_BUFSIZE) 
 	{
-		for (i = 0; i < MAX_STATIC_PKT_NUM; i++)
-		{
-			if (bcm_static_skb->pkt_use[i+MAX_STATIC_PKT_NUM] == 0)
-				break;
-		}
+	for (i = 0; i < MAX_STATIC_PKT_NUM; i++)
+	{
+		if (bcm_static_skb->pkt_use[i+MAX_STATIC_PKT_NUM] == 0)
+			break;
+	}
 
-		if (i != MAX_STATIC_PKT_NUM)
-		{
-			bcm_static_skb->pkt_use[i+MAX_STATIC_PKT_NUM] = 1;
-			up(&bcm_static_skb->osl_pkt_sem);
-			skb = bcm_static_skb->skb_8k[i];
-			skb->tail = skb->data + len;
-			skb->len = len;
-			
-			return skb;
-		}
+	if (i != MAX_STATIC_PKT_NUM)
+	{
+		bcm_static_skb->pkt_use[i+MAX_STATIC_PKT_NUM] = 1;
+		up(&bcm_static_skb->osl_pkt_sem);
+		skb = bcm_static_skb->skb_8k[i];
+		skb->tail = skb->data + len;
+		skb->len = len;
+		
+		return skb;
+	}
 	}
 
 	if (bcm_static_skb->pkt_use[MAX_STATIC_PKT_NUM*2] == 0) 

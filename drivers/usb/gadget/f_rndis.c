@@ -494,7 +494,7 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			rndis->port.in = ep_choose(cdev->gadget,
 					rndis->hs.in, rndis->fs.in);
 			rndis->port.out = ep_choose(cdev->gadget,
-					rndis->hs.out, rndis->fs.out);
+					rndis->hs.out, rndis->fs.out);		
 
 		/* Avoid ZLPs; they can be troublesome. */
 		rndis->port.is_zlp_ok = false;

@@ -74,6 +74,7 @@ extern unsigned int charging_mode_get(void);
 int samsung_kies_mtp_mode_flag;
 int check_reg = 0;
 
+static int microusb_usbpath = -1;
 
 FSA9480_DEV_TY1_TYPE FSA9480_Get_DEV_TYP1(void)
 {
@@ -120,6 +121,9 @@ u8 FSA9480_Get_USB_Status(void)
 #ifdef _JIG_USB_HW_WORKAROUND_
 	u8 device1, device2;
 		
+	if(microusb_usbpath > 0)
+		return 0;
+
 	fsa9480_read(REGISTER_DEVICETYPE1, &device1);
 	fsa9480_read(REGISTER_DEVICETYPE2, &device2);
 	
@@ -129,6 +133,9 @@ u8 FSA9480_Get_USB_Status(void)
 	else
 		return 0;
 #else
+	if(microusb_usbpath > 0)
+		return 0;
+
 	if( MicroUSBStatus | MicroJigUSBOnStatus | MicroJigUSBOffStatus )
 		return 1;
 	else
@@ -286,6 +293,8 @@ void FSA9480_Enable_CP_USB(u8 enable)
 	byte reg_value=0;
 	byte reg_address=0x0D;
 
+	microusb_usbpath = enable;
+
 #ifdef _UART_HW_BUG_
 	if(enable == 2)  // Set USB path to UART (For P1 KOR)
 	{
@@ -316,7 +325,6 @@ void FSA9480_Enable_CP_USB(u8 enable)
 
 		mdelay(10);
 		fsa9480_write(REGISTER_CONTROL, 0x1A);	
-
 	}
 	else
 	{
@@ -603,6 +611,20 @@ static void FSA9480_ReadIntRegister(struct work_struct * work)
 
 	fsa9480_read(REGISTER_DEVICETYPE2, &device2);
 
+	if(microusb_usbpath > 0) // if CP USB
+	{
+		usb_state = 0;
+
+		fsa9480_write(REGISTER_CONTROL, 0x1A);
+		mdelay(10);
+
+		fsa9480_write(REGISTER_MANUALSW1, 0x90);
+		mdelay(10);
+
+		fsa9480_write(REGISTER_INTERRUPTMASK1, 0xFC);
+	}
+	else
+	{
 	usb_state = (device2 << 8) | (device1 << 0);
 
 	if((interrupt1 & FSA9480_INT1_ATTACH)
@@ -647,6 +669,7 @@ static void FSA9480_ReadIntRegister(struct work_struct * work)
 
 		fsa9480_device1 = 0;
 		fsa9480_device2 = 0;
+	}
 	}
 	
 	enable_irq(IRQ_FSA9480_INTB);
@@ -776,6 +799,20 @@ void FSA9480_InitDevice(void)
 		}
 	}
 
+	if(microusb_usbpath > 0) // if CP USB
+	{
+		s3c_usb_cable(USB_CABLE_DETACHED);
+
+		usb_state = 0;
+
+		fsa9480_write(REGISTER_CONTROL, 0x1A);
+		mdelay(10);
+
+		fsa9480_write(REGISTER_MANUALSW1, 0x90);
+		mdelay(10);
+	}
+	else
+	{
 	if(device1 && (device1 != FSA9480_DEV_TY1_DED_CHG)) {
 		s3c_usb_cable(USB_CABLE_ATTACHED);
 	}
@@ -791,7 +828,12 @@ void FSA9480_InitDevice(void)
 	fsa9480_device1 = device1;
 	fsa9480_device2 = device2;
 
+		fsa9480_write(REGISTER_CONTROL, 0x1E);
+
 	FSA9480_ProcessDevice(fsa9480_device1, fsa9480_device2, attach);
+	}
+
+	fsa9480_write(REGISTER_INTERRUPTMASK1, 0xFC);
 
 	// clear interrupt
 	fsa9480_read(REGISTER_INTERRUPT1, &interrupt1);

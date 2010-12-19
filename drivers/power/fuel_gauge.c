@@ -35,6 +35,22 @@
 #define ATL_Capacity		0x1F68  // 4020mAh
 #define ATL_VFCapacity		0x29E0  // 5360mAh
 
+// For low battery compensation.
+// SDI type threshold
+#define SDI_Range3_1_Threshold	3360
+#define SDI_Range3_3_Threshold	3450
+#define SDI_Range2_1_Threshold	3408
+#define SDI_Range2_3_Threshold	3463
+#define SDI_Range1_1_Threshold	3456
+#define SDI_Range1_3_Threshold	3530
+// ATL type threshold
+#define ATL_Range3_1_Threshold	3312
+#define ATL_Range3_3_Threshold	3330
+#define ATL_Range2_1_Threshold	3317
+#define ATL_Range2_3_Threshold	3344
+#define ATL_Range1_1_Threshold	3370
+#define ATL_Range1_3_Threshold	3385
+
 
 typedef enum {
 	POSITIVE = 0,
@@ -75,16 +91,16 @@ static int fg_i2c_read(struct i2c_client *client, u8 reg, u8 *data, u8 length)
 
 #if 0  // not used.
 	value = swab16(i2c_smbus_read_word_data(client, (u8)reg));
-	
+
 	if (value < 0)
 		pr_err("%s: Failed to fg_i2c_read\n", __func__);
-	
+
 	*data = (value &0xff00) >>8;
 	*(data+1) = value & 0x00ff;
 #endif
-	value = i2c_smbus_read_i2c_block_data(client, (u8)reg, length, data);
-	if (value < 0)
-		pr_err("%s: Failed to fg_i2c_read\n", __func__);
+		value = i2c_smbus_read_i2c_block_data(client, (u8)reg, length, data);
+		if (value < 0)
+			pr_err("%s: Failed to fg_i2c_read\n", __func__);
 	
 	return 0;
 }
@@ -521,7 +537,7 @@ int fg_reset_soc(void)
 		printk("%s : fuel guage IC is not initialized!!\n", __func__);
 		return -1;
 	}
-
+	
 	// cycle 0
 	fg_write_register(0x17, (u16)(0x0));
 	
@@ -600,7 +616,7 @@ int fg_adjust_capacity(void)
 
 	data[0] = 0;
 	data[1] = 0;
-
+	
 	// 1. Write RemCapREP(05h)=0;
 	if (fg_i2c_write(client, REMCAP_REP_REG, data, (u8)2) < 0) {
 		pr_err("%s: Failed to write RemCap_REP\n", __func__);
@@ -687,7 +703,7 @@ void fg_test_read(void)
 	u8 data[2], reg;
 	struct i2c_client *client = fg_i2c_client;
 
-	for(reg = 0; reg < 0x40; reg++)
+	for(reg=0; reg<0x40; reg++)
 	{
 		if(reg != 0x0C && reg != 0x13 && reg != 0x15 && reg != 0x20 && reg != 0x22
 			&& reg != 0x26 && reg != 0x28 && reg != 0x30 && reg != 0x31 && reg != 0x34
@@ -708,8 +724,8 @@ int fg_alert_init(void)
 {
 	struct i2c_client *client = fg_i2c_client;
 	u8 misccgf_data[2];
-	u8 salrt_data[2];
-	u8 config_data[2];
+	u8 salrt_data[2];	
+	u8 config_data[2];	
 	u8 valrt_data[2];
 	u8 talrt_data[2];
 	u16 read_data = 0;
@@ -740,7 +756,7 @@ int fg_alert_init(void)
 		pr_info("%s: Failed to write SALRT_THRESHOLD_REG\n", __func__);
 		return -1;	
 	}
-
+	
 rewrite_valrt:
 	// Reset VALRT Threshold setting (disable)
 	valrt_data[1] = 0xFF;
@@ -788,7 +804,7 @@ rewrite_talrt:
 		return -1;
 	}
 		
-	return 1;
+	return 1;	
 }
 
 
@@ -860,7 +876,7 @@ void fg_fullcharged_compensation(void)
 	
 	if(!fuel_guage_init) {
 		printk("%s : fuel guage IC is not initialized!!\n", __func__);
-		return ;
+		return;
 	}
 
 	//1. Write RemCapREP(05h)=FullCap;

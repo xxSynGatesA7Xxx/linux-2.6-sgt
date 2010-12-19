@@ -124,7 +124,8 @@ source "drivers/platform/Kconfig"
 
 source "drivers/onedram/Kconfig"
 
-source "drivers/sensor/Kconfig"
+source "drivers/onedram_recovery/Kconfig"
 
+source "drivers/sensor/Kconfig"
 
 endmenu

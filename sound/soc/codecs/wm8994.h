@@ -172,6 +172,5 @@ void wm8994_register_dump(struct snd_soc_codec *codec);
 extern unsigned int HWREV;
 void audio_ctrl_earmic_bias_gpio(int enable);
 void audio_ctrl_mic_bias_gpio(int enable);
-
 int get_audio_power_status(void);
 

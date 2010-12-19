@@ -1937,7 +1937,7 @@ void s3cfb_early_suspend(struct early_suspend *h)
 
 #if !defined(CONFIG_TARGET_LOCALE_LTN) // CYS_ 2010.07.02 for Camera Preview
 	if(HWREV <= 10)		// MIDAS[2010.09.14] MLCD_ON control below rev0.4 (EUR) or rev0.8(KOR)
-		gpio_set_value(GPIO_MLCD_ON, 0);
+	gpio_set_value(GPIO_MLCD_ON, 0);
 #endif
 	max8998_ldo_disable_direct(MAX8998_LDO17);
 #endif
@@ -2020,17 +2020,22 @@ void s3cfb_late_resume(struct early_suspend *h)
 	else
 		printk("no init_ldi\n");
 #endif
-	
+
 	clk_enable(info->clock);
 
 #if defined(CONFIG_MACH_S5PC110_P1) && defined(CONFIG_TARGET_LOCALE_KOR)
 	s3cfb_change_pclk_mode(current_band_for_pclk);
 #endif
-
+	
 #ifdef CONFIG_FB_S3C_MDNIE
 #if !(defined(CONFIG_MACH_S5PC110_P1) && defined(CONFIG_TARGET_LOCALE_KOR))
 	writel(0x1, S5P_MDNIE_SEL);
 	writel(3,fbdev->regs + 0x27c);
+#else
+#if !(defined(CONFIG_MACH_S5PC110_P1) && defined(CONFIG_TARGET_LOCALE_VZW))
+		writel(0x1, S5P_MDNIE_SEL);
+		writel(3,fbdev->regs + 0x27c);
+#endif
 #endif
 #endif
 	s3cfb_init_global();
@@ -2040,6 +2045,11 @@ void s3cfb_late_resume(struct early_suspend *h)
 #if !(defined(CONFIG_MACH_S5PC110_P1) && defined(CONFIG_TARGET_LOCALE_KOR))
 	s3c_mdnie_init_global(fbdev);
 	s3c_mdnie_start(fbdev);
+#else
+#if !(defined(CONFIG_MACH_S5PC110_P1) && defined(CONFIG_TARGET_LOCALE_VZW))
+	s3c_mdnie_init_global(fbdev);
+	s3c_mdnie_start(fbdev);
+#endif
 #endif 
 #endif 
 
@@ -2057,7 +2067,7 @@ void s3cfb_late_resume(struct early_suspend *h)
 	max8998_ldo_enable_direct(MAX8998_LDO17);
 #if !defined(CONFIG_TARGET_LOCALE_LTN)  // CYS_ 2010.07.02 for Camera Preview
 	if(HWREV <= 10)		// MIDAS[2010.09.14] MLCD_ON control below rev0.4 (EUR) or rev0.8(KOR)
-		gpio_set_value(GPIO_MLCD_ON, 1);
+	gpio_set_value(GPIO_MLCD_ON, 1);
 #endif
 
 	gpio_set_value(GPIO_LCD_LDO_EN, 1);		//backlight & LCD

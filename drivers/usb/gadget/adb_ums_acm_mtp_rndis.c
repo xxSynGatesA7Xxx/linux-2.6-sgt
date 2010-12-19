@@ -67,7 +67,11 @@ static const char longname[] = "Gadget Android";
 //#define ADB_PRODUCT_ID 	0x6601	/* Swallowtail*/
 //#define ADB_PRODUCT_ID 	0x681C	/* S3C6410 Swallowtail*/
 #define KIES_PRODUCT_ID 	0x6877	/* S3C6410 Swallowtail*/
+#ifdef CONFIG_TARGET_LOCALE_VZW
+#define MTP_PRODUCT_ID 	0x5A0F	/* S3C6410 Swallowtail*/  //0x68A9 --> 0x5A0F for VZW Lab's0x68A9 request
+#else
 #define MTP_PRODUCT_ID 	0x68A9	/* S3C6410 Swallowtail*/
+#endif
 
 #define ADB_PRODUCT_ID 	0x681C	/* S3C6410 Swallowtail*/
 #define PRODUCT_ID		0x681D
@@ -76,6 +80,11 @@ static const char longname[] = "Gadget Android";
 #define RNDIS_PRODUCT_NUM	0xa4a2	/* Ethernet/RNDIS Gadget */
 #define CDC_VENDOR_NUM		0x0525	/* NetChip */
 #define CDC_PRODUCT_NUM		0xa4a1	/* Linux-USB Ethernet Gadget */
+
+#ifndef CONFIG_TARGET_LOCALE_SPR        //for only VZW
+#define _SUPPORT_SAMSUNG_AUTOINSTALLER_
+#endif
+
 extern void ap_usb_power_on(int set_vaue);
 
 void get_usb_serial(char *usb_serial_number)
@@ -366,9 +375,9 @@ static int ums_cdfs_bind_config(struct usb_configuration *c)
 	int ret;
 
 	dev->cdev->desc.idProduct = __constant_cpu_to_le16(dev->product_id);
-	dev->cdev->desc.bDeviceClass = USB_CLASS_MASS_STORAGE;
-	dev->cdev->desc.bDeviceSubClass = 0x06;//US_SC_SCSI;
-	dev->cdev->desc.bDeviceProtocol = 0x50;//US_PR_BULK;
+	dev->cdev->desc.bDeviceClass = USB_CLASS_PER_INTERFACE;
+	dev->cdev->desc.bDeviceSubClass = 0x00;
+	dev->cdev->desc.bDeviceProtocol = 0x00;
 
 	ret = mass_storage_function_config_changed(dev->cdev, c, dev->nluns);
 	if (ret) {
@@ -594,7 +603,7 @@ static void enable_adb(struct android_dev *dev, int enable)
 {
 	int ret;
 
-	printk("[USB] %s\n", __func__);
+	printk("[USB] %s, adb_enabled %d, enable, %d \n", __func__, dev->adb_enabled, enable);
 	if (enable != dev->adb_enabled) {
 		prev_enable_status = dev->adb_enabled;
 		printk("[USB] %s - enable(0x%02x), prev_status(0x%02x)\n", __func__, enable, prev_enable_status);
