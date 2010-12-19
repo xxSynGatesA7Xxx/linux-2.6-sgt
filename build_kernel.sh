@@ -3,6 +3,7 @@
 DATE=$(date +%m%d)
 CONFIG="galaxytab"
 rm "$DATE"_test_*.zip
+rm "$DATE"_test_*.tar
 rm -rf ../galaxytab_initramfs/.git
 
 make mrproper
