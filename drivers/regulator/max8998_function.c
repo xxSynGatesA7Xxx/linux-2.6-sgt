@@ -2945,7 +2945,7 @@ void maxim_vac_connect(void)
 		s3c_cable_changed();
 #ifndef FEATURE_SAIN_TOUCH
 		qt602240_inform_charger_connection(1);	//for touch setting;// kmj_sain
-#endif		
+#endif	
 #ifdef CONFIG_MHL_SII9234
 		acc_TA_check(TRUE);
 #endif

@@ -296,8 +296,8 @@ s3c24xx_serial_rx_chars(int irq, void *dev_id)
                 if(ch != 0)
                     send_keyevent(ch);
             }
-#endif            
-                
+#endif
+
 		if (uart_handle_sysrq_char(port, ch))
 			goto ignore_char;
 
@@ -343,7 +343,7 @@ static irqreturn_t s3c24xx_serial_tx_chars(int irq, void *id)
 			break;
              if(!((port->line == 2)&&g_keyboard))
             {
-		wr_regb(port, S3C2410_UTXH, xmit->buf[xmit->tail]);
+                wr_regb(port, S3C2410_UTXH, xmit->buf[xmit->tail]);
             }
 		xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
 		port->icount.tx++;
@@ -714,13 +714,13 @@ static void s3c24xx_serial_set_termios(struct uart_port *port,
 	/*
 	 * Ask the core to calculate the divisor for us.
 	 */
-#if defined(CONFIG_KEYBOARD_P1)	 
+#if defined(CONFIG_KEYBOARD_P1)
         if((port->line == 2)&&g_keyboard)
             baud = 9600;
         else
-#endif        
+#endif
             baud = uart_get_baud_rate(port, termios, old, 0, 3000000);
-	
+
 
 	if (baud == 38400 && (port->flags & UPF_SPD_MASK) == UPF_SPD_CUST)
 		quot = port->custom_divisor;
@@ -1169,7 +1169,7 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
 	s3c24xx_serial_resetport(port, cfg);
 
 	s3c_setup_uart_cfg_gpio(cfg->hwport);
-	
+
 	clk_disable(ourport->clk);
 
 	return 0;
@@ -1436,7 +1436,7 @@ s3c24xx_serial_console_write(struct console *co, const char *s,
 {
 #if defined(CONFIG_KEYBOARD_P1)
     if(!g_keyboard)
-#endif    
+#endif
     {
         uart_console_write(cons_uart, s, count, s3c24xx_serial_console_putchar);
     }
@@ -1444,7 +1444,7 @@ s3c24xx_serial_console_write(struct console *co, const char *s,
 
 #if defined(CONFIG_KEYBOARD_P1)
 void dock_keyboard_tx(u8 val)
-{    
+{
     wr_regb(cons_uart, S3C2410_UTXH, val);
 }
 EXPORT_SYMBOL(dock_keyboard_tx);
@@ -1452,7 +1452,7 @@ EXPORT_SYMBOL(dock_keyboard_tx);
 int change_console_baud_rate(int baud)
 {
     unsigned int ubrdiv;
-    unsigned long rate;    
+    unsigned long rate;
     struct s3c24xx_uart_clksrc clksrc;
     struct clk *clk;;
 
@@ -1469,7 +1469,7 @@ int change_console_baud_rate(int baud)
     }
 
     ubrdiv= ((rate / 16) / baud) - 1;
-    
+
     if(baud == 9600)
     {
         g_keyboard = true;
@@ -1482,7 +1482,7 @@ int change_console_baud_rate(int baud)
     wr_regl(cons_uart, S3C2410_UBRDIV, ubrdiv);
     printk(KERN_DEBUG "[Keyboard] baud : %d, ubrdiv : %x\n", baud, ubrdiv);
     return 0;
-    
+
 }
 EXPORT_SYMBOL(change_console_baud_rate);
 #endif

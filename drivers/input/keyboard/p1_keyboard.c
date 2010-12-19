@@ -82,32 +82,34 @@ static void key_event_work(struct work_struct *work)
         scan_code = key_buf[buf_front];
 
         /* keyboard driver need the contry code*/
-    if(data->kl == UNKOWN_KEYLAYOUT)
-    {
+        if(data->kl == UNKOWN_KEYLAYOUT)
+        {
             switch(scan_code)
-        {
-            case US_KEYBOARD:
-                data->kl = US_KEYLAYOUT;
+            {
+                case US_KEYBOARD:
+                    data->kl = US_KEYLAYOUT;
                     dock_keycodes[49].keycode = KEY_BACKSLASH;
-                    printk(KERN_DEBUG "[Keyboard] US keyboard is attacted.\n");
-                break;
+                    printk(KERN_DEBUG "[Keyboard] US keyboard is detected.\n");
+                    break;
 
-            case UK_KEYBOARD:
-                data->kl = UK_KEYLAYOUT;
+                case UK_KEYBOARD:
+                    data->kl = UK_KEYLAYOUT;
                     dock_keycodes[49].keycode = KEY_NUMERIC_POUND;
-                    printk(KERN_DEBUG "[Keyboard] UK keyboard is attacted.\n");
-                break;
+                    printk(KERN_DEBUG "[Keyboard] UK keyboard is detected.\n");
+                    break;
 
-            default:
+                default:
                     printk(KERN_DEBUG "[Keyboard] Unkown key layout : %x\n", scan_code);
-                break;
+                    break;
+            }
+            /* for the wakeup state*/
+            pre_kl = data->kl;
         }
-    }
-    else
-    {
-        /* Do not send the key_event durring the handshake time */
-        if(handshaking)
+        else
         {
+            /* Do not send the key_event durring the handshake time */
+            if(handshaking)
+            {
                 /* Caps lock led on/off */
                 if(scan_code == 0xca || scan_code == 0xcb)
                 {
@@ -119,30 +121,24 @@ static void key_event_work(struct work_struct *work)
                     press = ((scan_code & 0x80) != 0x80);
                     keycode = (scan_code & 0x7f);
 
-            if(keycode >= KEYBOARD_MIN || keycode <= KEYBOARD_MAX)
-            {
-                if(press)
-                {
+                    if(keycode >= KEYBOARD_MIN || keycode <= KEYBOARD_MAX)
+                    {
+                        if(press)
+                        {
+                            dock_keycodes[keycode].pressed = true;
+                            printk(KERN_DEBUG "[Keyboard] %d key is pressed.\n", dock_keycodes[keycode].keycode);
+                        }
+                        else
+                        {
                             // workaround keyboard issue
                             if(dock_keycodes[keycode].pressed)
                             {
                                 input_report_key(data->input_dev, dock_keycodes[keycode].keycode, 0);
-                                msleep(1);
-                            }
-                            dock_keycodes[keycode].pressed = true;
-                            printk(KERN_DEBUG "[Keyboard] %d key is pressed.\n", dock_keycodes[keycode].keycode);
-                }
-                else
-                {
-                            // workaround keyboard issue
-                            if(!(dock_keycodes[keycode].pressed))
-                            {
-                                input_report_key(data->input_dev, dock_keycodes[keycode].keycode, 1);
-                                msleep(1);
+                                msleep(10);
                             }
                             dock_keycodes[keycode].pressed = false;
                             printk(KERN_DEBUG "[Keyboard] %d key is released.\n", dock_keycodes[keycode].keycode);
-                }
+                        }
 
                         /* for the remap keys*/
                         if(keycode == 0x45 || keycode == 0x48)
@@ -157,9 +153,9 @@ static void key_event_work(struct work_struct *work)
                                 if(remap_state == REMAPKEY_PRESSED)
                                 {
                                     remap_state = REMAPKEY_RELEASED;
-                        input_report_key(data->input_dev, dock_keycodes[keycode].keycode, press);
-                        input_sync(data->input_dev);
-            }
+                                    input_report_key(data->input_dev, dock_keycodes[keycode].keycode, press);
+                                    input_sync(data->input_dev);
+                                }
                             }
                         }
                         else
@@ -170,10 +166,10 @@ static void key_event_work(struct work_struct *work)
                     }
 /* This is not working */
 #if 0
-            else
-            {
+                    else
+                    {
                         /* request last scancode again*/
-                dock_keyboard_tx(0xaa);
+                        dock_keyboard_tx(0xaa);
                         printk(KERN_DEBUG "[Keyboard] wrong key_code : 0x%x\n", scan_code);
                     }
 #endif
@@ -223,7 +219,6 @@ int check_keyboard_dock(void)
     int try_cnt = 0;
     int error = 0;
     int max_cnt = 10;
-    int i = 0;
 
     if(gpio_get_value(g_data->gpio))
     {
@@ -263,19 +258,18 @@ int check_keyboard_dock(void)
             }
             first_connection = false;
         }
-       else if((connected_time - disconnected_time) < 1000)
+        else if((connected_time - disconnected_time) < 3000)
         {
             g_data->kl = pre_kl;
-//            dockconnected = true;
-            printk(KERN_DEBUG "[Keyboard] kl : %d\n", pre_kl);
+            dockconnected = true;
         }
 
         if(!keyboard_enable)
         {
-                s3c_gpio_cfgpin(ACCESSORY_EN, S3C_GPIO_OUTPUT);
-                s3c_gpio_setpull(ACCESSORY_EN, S3C_GPIO_PULL_UP);
-                gpio_set_value(ACCESSORY_EN, 1);
-        keyboard_enable = true;
+            s3c_gpio_cfgpin(ACCESSORY_EN, S3C_GPIO_OUTPUT);
+            s3c_gpio_setpull(ACCESSORY_EN, S3C_GPIO_PULL_UP);
+            gpio_set_value(ACCESSORY_EN, 1);
+            keyboard_enable = true;
         }
 
         /* if the uart is set as cp path, the path should be switched to ap path.*/
@@ -293,7 +287,7 @@ int check_keyboard_dock(void)
             printk(KERN_ERR "[Keyboard] Couldn't modify the baud rate.\n");
         }
 
-//        if(!dockconnected)
+        if(!dockconnected)
         {
             /* try to get handshake data */
             for(try_cnt=0; try_cnt<max_cnt; try_cnt++)
@@ -336,23 +330,12 @@ int check_keyboard_dock(void)
             }
             dockconnected = false;
             gpio_set_value(GPIO_UART_SEL, pre_uart_path);
-            mod_timer(&g_data->timer, jiffies + HZ);
-
-           /* for the wakeup state*/
-            pre_kl = g_data->kl;
+            mod_timer(&g_data->timer, jiffies + 3*HZ);
 
             g_data->kl = UNKOWN_KEYLAYOUT;
             pre_connected = false;
             handshaking = false;
             disconnected_time = jiffies_to_msecs(jiffies);
-            for(i = 0; i < KEYBOARD_MAX; i++)
-            {
-                if(dock_keycodes[i].pressed)
-                {
-                    input_report_key(g_data->input_dev, dock_keycodes[i].keycode, 0);
-                    dock_keycodes[i].pressed = false;
-                }
-            }
         }
         return 0;
     }
@@ -397,12 +380,12 @@ static ssize_t caps_lock_led(struct device *dev, struct device_attribute *attr, 
     {
         if(i == 1)
         {
-        g_data->led_on = true;
-    }
-    else
-    {
-        g_data->led_on = false;
-    }
+            g_data->led_on = true;
+        }
+        else
+        {
+            g_data->led_on = false;
+        }
     }
     else
     {
@@ -541,8 +524,8 @@ err_free_mem:
 static int __devexit dock_keyboard_remove(struct platform_device *pdev)
 {
 //    struct dock_keyboard_data *pdata = pdev->dev.platform_data;
-	input_unregister_device(g_data->input_dev);
-	return 0;
+    input_unregister_device(g_data->input_dev);
+    return 0;
 }
 
 #ifdef CONFIG_HAS_EARLYSUSPEND

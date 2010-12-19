@@ -54,7 +54,7 @@ void s3c_udc_ep_set_stall(struct s3c_ep *ep);
 static inline void s3c_udc_ep0_zlp(void)
 {
 	u32 ep_ctrl;
-
+	
 	writel(virt_to_phys(&usb_ctrl), S3C_UDC_OTG_DIEPDMA(EP0_CON));
 	writel((1<<19| 0<<0), S3C_UDC_OTG_DIEPTSIZ(EP0_CON));
 
@@ -68,7 +68,7 @@ static inline void s3c_udc_ep0_zlp(void)
 static inline void s3c_udc_pre_setup(void)
 {
 	u32 ep_ctrl;
-	
+
 	DEBUG_IN_EP("%s : Prepare Setup packets.\n", __func__);
 
 	writel((1 << 19)|sizeof(struct usb_ctrlrequest), S3C_UDC_OTG_DOEPTSIZ(EP0_CON));

@@ -171,14 +171,20 @@ static int get_time_for_vibetonz(struct timed_output_dev *dev)
 {
 	int remaining;
 
-	if (hrtimer_active(&timer))	{
+	if (hrtimer_active(&timer))
+	{
 		ktime_t r = hrtimer_get_remaining(&timer);
 		remaining = r.tv.sec * 1000 + r.tv.nsec / 1000000;
-	}	else	{
-		remaining = 0;	}
+	}
+	else
+	{
+		remaining = 0;
+	}
 
-	if (vibrator_value ==-1)	{
-		remaining = -1;	}
+	if (vibrator_value ==-1)
+	{
+		remaining = -1;
+	}
 
 	return remaining;
 
@@ -194,14 +200,17 @@ static void enable_vibetonz_from_user(struct timed_output_dev *dev,int value)
 
 	if (value > 0)
 	{
-		if (value > max_timeout)		{
-			value = max_timeout;		}
+		if (value > max_timeout)
+		{
+			value = max_timeout;
+		}
 		hrtimer_start(&timer,	ktime_set(value / 1000, (value % 1000) * 1000000), HRTIMER_MODE_REL);
 		vibrator_value = 0;
 	}
 }
 
-static struct timed_output_dev timed_output_vt =   {
+static struct timed_output_dev timed_output_vt =
+   {
 	.name     = "vibrator",
 	.get_time = get_time_for_vibetonz,
 	.enable   = enable_vibetonz_from_user,

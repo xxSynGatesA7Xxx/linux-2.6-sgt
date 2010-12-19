@@ -1015,14 +1015,6 @@ static int s5k6aafx_power_en(int onoff)
 	return 0;
 }
 
-int s5k6aafx_power_reset(void)
-{
-	s5k6aafx_power_en(0);
-	s5k6aafx_power_en(1);
-
-	return 0;
-}
-
 static struct s5k6aafx_platform_data s5k6aafx_plat = {
 	.default_width = 800,
 	.default_height = 600,
@@ -1069,7 +1061,7 @@ static struct s3c_platform_camera s5k6aafx = {
 #ifdef CONFIG_VIDEO_ISX005
 /**
  * isx005_ldo_en()
- * camera???곣뫗??????????????LDO??????뱀??
+ * camera???��곣뫗??????????���????LDO???�???뱀�??
  *
  * @param     en             LDO enable ???
  * @return    void
@@ -1134,7 +1126,7 @@ static void isx005_ldo_en(bool en)
  * camera??enable ??類ｋ?
  *
  * @param     en             enable ???
- * @return    err              gpio ???????????롪퍔???err???꾩뇑???類ｋ?
+ * @return    err              gpio ??�?�?????��???롪퍔???err???꾩뇑???類ｋ?
  * @remark    Function     gpio_request, gpio_direction_output, gpio_set_value, msleep, gpio_free
  *
  * Dec 07, 2009  initial revision
@@ -1179,7 +1171,7 @@ int isx005_cam_stdby(bool en)
  * camera??reset ??類ｋ?
  *
  * @param     nrst             reset ???
- * @return    err              gpio ???????????롪퍔???err???꾩뇑???類ｋ?
+ * @return    err              gpio ??�?�?????��???롪퍔???err???꾩뇑???類ｋ?
  * @remark    Function     gpio_request, gpio_direction_output, gpio_set_value, msleep, gpio_free
  *
  * Dec 07, 2009  initial revision
@@ -1225,10 +1217,10 @@ static int isx005_cam_nrst(bool nrst)
 }
 /**
  * isx005_power_on()
- * camera????????�????????????類ｋ?
+ * camera??????��??繞�?????�슖????�??類ｋ?
  *
  * @param     en             enable ???
- * @return    err              gpio ???????????롪퍔???err???꾩뇑???類ｋ?
+ * @return    err              gpio ??�?�?????��???롪퍔???err???꾩뇑???類ｋ?
  * @remark    Function     isx005_setup_port, isx005_ldo_en, s3c_gpio_cfgpin,
  *                                   isx005_cam_stdby, isx005_cam_nrst
  *
@@ -1315,14 +1307,6 @@ static int isx005_power_en(int onoff)
 		isx005_power_off();
 		s3c_i2c0_force_stop();
 	}
-
-	return 0;
-}
-
-int isx005_power_reset(void)
-{
-	isx005_power_en(0);
-	isx005_power_en(1);
 
 	return 0;
 }
@@ -1618,14 +1602,14 @@ static struct s3cfb_lcd lvds = {
         .freq = 60,
 
         .timing = {
-                .h_fp = 100, //50,	//179,	//.h_fp = 79,
-                .h_bp = 80, //30,	//225,	//.h_bp = 200,
-                .h_sw = 50, //20,	//40,
-                .v_fp = 10, //6,	//10,
+                .h_fp = 142,	//50,	//179,	//.h_fp = 79,
+                .h_bp = 210,	//30,	//225,	//.h_bp = 200,
+                .h_sw = 50,		//20,	//40,
+                .v_fp = 10,		//6,	//10,
                 .v_fpe = 1,
-                .v_bp = 11, //5,	//11,
+                .v_bp = 11,		//5,	//11,
                 .v_bpe = 1,
-                .v_sw = 10, //4,	//10,
+                .v_sw = 10,		// 4,	//10,
 
         },
 
@@ -1674,7 +1658,7 @@ static void lvds_cfg_gpio(struct platform_device *pdev)
 //        writel(0xffffffff, S5P_VA_GPIO + 0x14c);
 //        writel(0xffffffff, S5P_VA_GPIO + 0x16c);
 //        writel(0x000000ff, S5P_VA_GPIO + 0x18c);
-        writel(0x555555bf, S5P_VA_GPIO + 0x12c);
+        writel(0x5555557f, S5P_VA_GPIO + 0x12c);
         writel(0x55555555, S5P_VA_GPIO + 0x14c);
         writel(0x55555555, S5P_VA_GPIO + 0x16c);
         writel(0x00000055, S5P_VA_GPIO + 0x18c);
@@ -2748,7 +2732,7 @@ static struct platform_device *smdkc110_old_devices[] __initdata = {
 
 //	&modemctl,
 //	&onedram,
-	&sec_device_dpram,
+//	&sec_device_dpram,
 
 	&s3c_device_i2c0,
 	&s3c_device_i2c1,
@@ -2928,26 +2912,10 @@ static int arise_notifier_call(struct notifier_block *this, unsigned long code, 
 			mode = REBOOT_MODE_ARM11_FOTA;
 		else if (!strcmp((char *)_cmd, "arm9_fota"))
 			mode = REBOOT_MODE_ARM9_FOTA;
-			else if (!strcmp((char *)_cmd, "recovery")){ 
-
+		else if (!strcmp((char *)_cmd, "recovery")) 
 			mode = REBOOT_MODE_RECOVERY;
-#ifdef CONFIG_KERNEL_DEBUG_SEC 
-#if defined(CONFIG_TARGET_LOCALE_VZW) || defined(CONFIG_TARGET_LOCALE_SPR) 
-			    kernel_sec_set_upload_cause(BLK_UART_MSG_FOR_FACTRST_2ND_ACK);
-#endif
-#endif			
-            }
 		else if (!strcmp((char *)_cmd, "download")) 
 			mode = REBOOT_MODE_DOWNLOAD;
-
-#ifdef CONFIG_KERNEL_DEBUG_SEC
-#if defined(CONFIG_TARGET_LOCALE_VZW) || defined(CONFIG_TARGET_LOCALE_SPR) 
-		    else if (!strcmp((char *)_cmd, "factory_reboot")) { 
-			    mode = REBOOT_MODE_NONE;
-			    kernel_sec_set_upload_cause(BLK_UART_MSG_FOR_FACTRST_2ND_ACK);
-	            }
-#endif
-#endif	
 	}
 
 	if(code != SYS_POWER_OFF) {
@@ -5095,7 +5063,7 @@ static unsigned int p1_r12_sleep_gpio_table[][3] = {
 	{S5PV210_GPB(0), 
 			S3C_GPIO_SLP_OUT0, S3C_GPIO_PULL_NONE}, 
 	{S5PV210_GPB(1),
-			S3C_GPIO_SLP_OUT1, S3C_GPIO_PULL_NONE}, //HW request 09/14
+			S3C_GPIO_SLP_INPUT, S3C_GPIO_PULL_NONE}, 
 	{S5PV210_GPB(2),
 			S3C_GPIO_SLP_OUT0, S3C_GPIO_PULL_NONE}, 
 //	{S5PV210_GPB(3),  // GPIO_BT_nRST
@@ -5562,11 +5530,6 @@ static unsigned int p1_r16_sleep_gpio_table[][3] = {
 			S3C_GPIO_SLP_OUT0, S3C_GPIO_PULL_NONE}, 
 };
 
-static unsigned int p1_r18_sleep_gpio_table[][3] = {
-	{S5PV210_MP01(5),  // EAR_MICBIAS_EN
-			S3C_GPIO_SLP_PREV, S3C_GPIO_PULL_NONE}, 
-};
-
 static unsigned int p1_lcd_amoled_sleep_gpio_table[][3] = {
 	{S5PV210_GPJ1(3),
 			S3C_GPIO_SLP_OUT1, S3C_GPIO_PULL_NONE},
@@ -5692,7 +5655,7 @@ void s3c_config_sleep_gpio(void)
 
 	if(HWREV >= 12) {  // REMOTE_SENSE_IRQ (GT-P1000 Rev0.6)
 		s3c_gpio_cfgpin(GPIO_REMOTE_SENSE_IRQ, S3C_GPIO_INPUT);
-		s3c_gpio_setpull(GPIO_REMOTE_SENSE_IRQ, S3C_GPIO_PULL_DOWN); //HW request 09/16
+		s3c_gpio_setpull(GPIO_REMOTE_SENSE_IRQ, S3C_GPIO_PULL_NONE);
 		//s3c_gpio_setpin(GPIO_REMOTE_SENSE_IRQ, 0);
 	}
 	else {
@@ -5768,10 +5731,10 @@ void s3c_config_sleep_gpio(void)
 #endif
 
 	s3c_gpio_cfgpin(GPIO_MSENSE_IRQ, S3C_GPIO_INPUT);
-	s3c_gpio_setpull(GPIO_MSENSE_IRQ, S3C_GPIO_PULL_UP); 
+	s3c_gpio_setpull(GPIO_MSENSE_IRQ, S3C_GPIO_PULL_NONE);
 	//s3c_gpio_setpin(GPIO_MSENSE_IRQ, 0);
 
-
+    //NC seonha.song 
 	s3c_gpio_cfgpin(GPIO_GPH33, S3C_GPIO_INPUT);
 	s3c_gpio_setpull(GPIO_GPH33, S3C_GPIO_PULL_DOWN);
 	s3c_gpio_setpin(GPIO_GPH33, 0);
@@ -5782,7 +5745,7 @@ void s3c_config_sleep_gpio(void)
 
 	if(HWREV >= 11) {   // DOCK_INT (GT-P1000 Rev0.5)
 		s3c_gpio_cfgpin(GPIO_DOCK_INT, S3C_GPIO_INPUT);
-		s3c_gpio_setpull(GPIO_DOCK_INT, S3C_GPIO_PULL_DOWN); 
+		s3c_gpio_setpull(GPIO_DOCK_INT, S3C_GPIO_PULL_NONE);
 		//s3c_gpio_setpin(GPIO_DOCK_INT, 0);
 	}
 	else {  // NC
@@ -5790,14 +5753,14 @@ void s3c_config_sleep_gpio(void)
 		s3c_gpio_setpull(GPIO_GPH35, S3C_GPIO_PULL_NONE);
 		s3c_gpio_setpin(GPIO_GPH35, 0);
 	}
-#if 0 
+#if 0 //inchul.im
 	if(HWREV >= 0x4) {  // NC 
 		s3c_gpio_cfgpin(GPIO_GPH36, S3C_GPIO_OUTPUT);
 		s3c_gpio_setpull(GPIO_GPH36, S3C_GPIO_PULL_NONE);
 		s3c_gpio_setpin(GPIO_GPH36, 0);
 	}
 #endif 
-	if(HWREV >= 0x4) { 
+	if(HWREV >= 0x4) {  // NC // seonha.song
 		s3c_gpio_cfgpin(GPIO_GPH36, S3C_GPIO_INPUT);
 		s3c_gpio_setpull(GPIO_GPH36, S3C_GPIO_PULL_DOWN);
 		//s3c_gpio_setpin(GPIO_GPH36, 0);
@@ -5824,11 +5787,6 @@ void s3c_config_sleep_gpio(void)
 		if(HWREV >= 16) {  // Above P1000 Rev1.0
 			s3c_config_sleep_gpio_table(ARRAY_SIZE(p1_r16_sleep_gpio_table),
 				p1_r16_sleep_gpio_table);
-		}
-
-		if(HWREV >= 18) {  // Above P1000 Rev1.2
-			s3c_config_sleep_gpio_table(ARRAY_SIZE(p1_r18_sleep_gpio_table),
-				p1_r18_sleep_gpio_table);
 		}
 	}
 	else if(HWREV >= 8) {  // Above P1000 Rev0.2 (0.8)
@@ -6564,7 +6522,7 @@ void s3c_setup_uart_cfg_gpio(unsigned char port)
 #endif		
 		break;
 	case 1:
-		#if 0 
+		#if 0 //seonha.song
 		s3c_gpio_cfgpin(GPIO_GPS_RXD, S3C_GPIO_SFN(GPIO_GPS_RXD_AF));
 		s3c_gpio_setpull(GPIO_GPS_RXD, S3C_GPIO_PULL_UP);
 		s3c_gpio_cfgpin(GPIO_GPS_TXD, S3C_GPIO_SFN(GPIO_GPS_TXD_AF));
@@ -6576,7 +6534,7 @@ void s3c_setup_uart_cfg_gpio(unsigned char port)
 		#endif 
 		break;
 	case 2:
-		#if 0
+		#if 0 //seonha.song
 		s3c_gpio_cfgpin(GPIO_AP_RXD, S3C_GPIO_SFN(GPIO_AP_RXD_AF));
 		s3c_gpio_setpull(GPIO_AP_RXD, S3C_GPIO_PULL_NONE);
 		s3c_gpio_cfgpin(GPIO_AP_TXD, S3C_GPIO_SFN(GPIO_AP_TXD_AF));
@@ -6584,7 +6542,7 @@ void s3c_setup_uart_cfg_gpio(unsigned char port)
 		#endif 
 		break;
 	case 3:
-		#if 0 
+		#if 0 //seonha.song
 		s3c_gpio_cfgpin(GPIO_AP_FLM_RXD, S3C_GPIO_SFN(GPIO_AP_FLM_RXD_AF));
 		s3c_gpio_setpull(GPIO_AP_FLM_RXD, S3C_GPIO_PULL_NONE);
 		s3c_gpio_cfgpin(GPIO_AP_FLM_TXD, S3C_GPIO_SFN(GPIO_AP_FLM_TXD_AF));
@@ -6735,15 +6693,7 @@ void wlan_setup_power(int on, int flag)
 }
 EXPORT_SYMBOL(wlan_setup_power);
 
-#ifdef CONFIG_TARGET_LOCALE_VZW
-#ifdef CONFIG_TARGET_LOCALE_SPR
 MACHINE_START(SMDKC110, "SMDKC110")
-#else
-MACHINE_START(SMDKC110, "SMDKC110")
-#endif
-#else
-MACHINE_START(SMDKC110, "SMDKC110")
-#endif
 	/* Maintainer: Kukjin Kim <kgene.kim@samsung.com> */
 	.phys_io	= S3C_PA_UART & 0xfff00000,
 	.io_pg_offst	= (((u32)S3C_VA_UART) >> 18) & 0xfffc,

@@ -80,7 +80,7 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 
-#if 0//def CONFIG_KERNEL_DEBUG_SEC // klaatu
+#ifdef CONFIG_KERNEL_DEBUG_SEC // klaatu
 #include <linux/kernel_sec_common.h>
 #endif
 /*
@@ -2915,7 +2915,6 @@ unsigned long nr_running(void)
 
 	return sum;
 }
-EXPORT_SYMBOL_GPL(nr_running);
 
 unsigned long nr_uninterruptible(void)
 {
@@ -5489,7 +5488,7 @@ need_resched_nonpreemptible:
 		 */
 		cpu = smp_processor_id();
 		rq = cpu_rq(cpu);
-#if 0//def CONFIG_KERNEL_DEBUG_SEC // klaatu
+#ifdef CONFIG_KERNEL_DEBUG_SEC // klaatu
         gExcpTaskLog[gExcpTaskLogIdx].time = cpu_clock(cpu);
         strcpy(gExcpTaskLog[gExcpTaskLogIdx].log.task,rq->curr->comm);
         gExcpTaskLogIdx = (++gExcpTaskLogIdx >= SCHED_LOG_MAX)? 0:gExcpTaskLogIdx;

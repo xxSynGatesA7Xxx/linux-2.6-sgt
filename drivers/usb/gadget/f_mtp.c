@@ -105,8 +105,8 @@ static const char longname[] = 	"Gadget_MTP";
 static const char shortname[] = DRIVER_NAME;
 static int mtp_pid; 
 typedef enum {
-mtp_disable_desc = 0, //0
-mtp_enable_desc	  //1
+mtp_disable_desc = 0,  // 0
+mtp_enable_desc  // 1
 } mtp_desc_t;
 
 /* MTP Device Structure*/
@@ -1040,10 +1040,7 @@ static int mtpg_function_set_alt(struct usb_function *f,
 	dev->bulk_out->driver_data = dev;
 
 	dev->online = 1;
-#ifdef CONFIG_TARGET_LOCALE_VZW
-    dev->error = 0;
-    mtp_send_signal(USB_CABLE_CONNECTED);
-#endif
+
 	/* readers may be blocked waiting for us to go online */
 	wake_up(&dev->read_wq);
 
@@ -1059,9 +1056,7 @@ static void mtpg_function_disable(struct usb_function *f)
 
 	dev->online = 0;
 	dev->error = 1;
-#ifdef CONFIG_TARGET_LOCALE_VZW
-    mtp_send_signal(USB_CABLE_DISCONNECTED);
-#endif	
+	
 	usb_ep_disable(dev->int_in);
 	dev->int_in->driver_data = NULL;
 

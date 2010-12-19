@@ -45,7 +45,7 @@
 #include <linux/proc_fs.h>
 #endif	/* CONFIG_PROC_FS */
 
-#include <linux/kernel_sec_common.h>
+//#include <linux/kernel_sec_common.h>
 
 #include <linux/sched.h>
 #include <linux/signal.h>
@@ -184,7 +184,6 @@ static DEFINE_MUTEX(pdp_lock);
 
 static inline struct pdp_info * pdp_get_dev(u8 id);
 static inline void check_pdp_table(char*, int);
-static int onedram_get_semaphore_for_init(const char *func);
 
 /*****************************************************************************/
 
@@ -239,7 +238,8 @@ static atomic_t onedram_lock;
 static int onedram_lock_with_semaphore(const char*);
 static void onedram_release_lock(const char*);
 static void dpram_drop_data(dpram_device_t *device);
-//static int kernel_sec_dump_cp_handle2(void);
+// yhkim We need remerge for CP dump 
+// static int kernel_sec_dump_cp_handle2(void);
 
 
 static int requested_semaphore = 0;
@@ -417,11 +417,10 @@ static inline int _memcmp(u8 *dest, u8 *src, int size)
 		return 1;
 	}
 
-	while (i < size) {
+	while (i++ < size) {
 		if (*(dest + i) != *(src + i)) {
 			return 1;
 		}
-		i++;
 	}
 
 	return 0;
@@ -1014,10 +1013,6 @@ static int onedram_get_semaphore(const char *func)
 	
 	if(dump_on) return -1;
 
-	if(phone_sync == 0) {
-		return onedram_get_semaphore_for_init(__func__);
-	}
-
 	for(i = 0; i < req_try; i++) {
 		if(*onedram_sem) {
 			unreceived_semaphore = 0;
@@ -1033,7 +1028,7 @@ static int onedram_get_semaphore(const char *func)
 			func, *onedram_sem,	gpio_get_value(GPIO_PHONE_ACTIVE)?"HIGH":"LOW ", unreceived_semaphore);
 
 #ifdef _ENABLE_ERROR_DEVICE
-	if(unreceived_semaphore > 22)
+	if(unreceived_semaphore > 10)
 		request_phone_reset();
 #endif
 
@@ -1067,7 +1062,7 @@ static int onedram_get_semaphore_for_init(const char *func)
 			func, *onedram_sem,	gpio_get_value(GPIO_PHONE_ACTIVE)?"HIGH":"LOW ", unreceived_semaphore);
 
 #ifdef _ENABLE_ERROR_DEVICE
-	if(unreceived_semaphore > 22)
+	if(unreceived_semaphore > 10)
 		request_phone_reset();
 #endif
 
@@ -1391,7 +1386,8 @@ static int dpram_phone_ramdump_on(void)
 	}
 
 	// If it is configured to dump both AP and CP, reset both AP and CP here.
-//	kernel_sec_dump_cp_handle2();	
+	//  FIXIT 
+	//kernel_sec_dump_cp_handle2();	
 	
 	return 0;
 
@@ -2165,7 +2161,7 @@ static irqreturn_t dpram_irq_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-//#define DPRAM_USES_DELAYED_PHONE_ACTIVE_IRQ
+#define DPRAM_USES_DELAYED_PHONE_ACTIVE_IRQ
 
 #ifdef DPRAM_USES_DELAYED_PHONE_ACTIVE_IRQ
 static void phone_active_delayed_work_handler(struct work_struct *ignored);
@@ -2192,37 +2188,21 @@ static irqreturn_t phone_active_irq_handler(int irq, void *dev_id)
 	printk(KERN_ERR "[OneDRAM] PHONE_ACTIVE level: %s, sem: %d, phone_sync: %d\n", 
 			gpio_get_value(GPIO_PHONE_ACTIVE)?"HIGH":"LOW ", *onedram_sem, phone_sync);
 
-	if(gpio_get_value(GPIO_PHONE_ACTIVE))
-		return IRQ_HANDLED;
-	
 #ifdef DPRAM_USES_DELAYED_PHONE_ACTIVE_IRQ
 		if(gpio_get_value(GPIO_PHONE_ACTIVE) == 0) {
 			schedule_delayed_work(&phone_active_delayed_work, 100);
 		}
-#else
-
-	if(!phone_sync) {
-		return IRQ_HANDLED;
-	}
-	
-	// Phone active irq is only fired when there is a problem (except the first 
-	// modem boot up). So let's just call delay function for an easy fix
-	// for ignoring the momentary drop..
-	mdelay(5);
-
-	if(gpio_get_value(GPIO_PHONE_ACTIVE)) {
-		printk(KERN_ERR "[ONEDRAM] Momentary Phone Active IRQ drop detected...Ignored!\n");
-		return IRQ_HANDLED;
-	}
+#endif /* DPRAM_USES_DELAYED_PHONE_ACTIVE_IRQ */
 
 #ifdef _ENABLE_ERROR_DEVICE
 	if((phone_sync) && (!gpio_get_value(GPIO_PHONE_ACTIVE)))
 		request_phone_reset();	
 #endif
-#endif /* DPRAM_USES_DELAYED_PHONE_ACTIVE_IRQ */
 
 	return IRQ_HANDLED;
 }
+
+//FIXIT
 #if 0
 static int kernel_sec_dump_cp_handle2(void)
 {
@@ -2241,6 +2221,7 @@ static int kernel_sec_dump_cp_handle2(void)
 	kernel_sec_hw_reset(false);
 }       
 #endif
+
 
 /* basic functions. */
 #ifdef _ENABLE_ERROR_DEVICE
@@ -2844,55 +2825,6 @@ static int dpram_resume(struct platform_device *dev)
 	return 0;
 }
 
-static int dpram_shutdown(struct platform_Device *dev)
-{
-	int ret = 0;
-	printk("\ndpram_shutdown !!!!!!!!!!!!!!!!!!!!!\n");
-	//ret = del_timer(&request_semaphore_timer);
-	printk("\ndpram_shutdown ret : %d\n", ret);
-
-	unregister_dpram_driver();
-	unregister_dpram_err_device();
-	
-	free_irq(IRQ_ONEDRAM_INT_N, NULL);
-	free_irq(IRQ_PHONE_ACTIVE, NULL);
-
-	kill_tasklets();
-	return 0;
-}
-
-static void dpram_clear_magic_code(void)
-{
-	char buf[16];
-	int i = 0;
-	
-	printk(KERN_ERR "%s\n", __func__);
-
-	if(*onedram_sem) {
- 		printk(KERN_ERR "AP has semaphore.\n");
-	}
-	else{
-	 	printk(KERN_ERR "CP has semaphore.\n");
-	}
-
-	memset((void*)buf, 0x00, sizeof(buf));
-	READ_FROM_DPRAM(buf, 0, 4);
-	printk(KERN_ERR "Read Data = ");
-	for(i=0;i<4;i++){
-		printk(KERN_ERR "%02x ", buf[i]);	
-	}
-
-	printk(KERN_ERR "\n");
-
-
-	if( (buf[0]==0x4c) && (buf[1]==0x55)){
-		printk(KERN_ERR "Clearing Upload Magic Code.\n");
-		memset((void*)buf, 0x00, sizeof(buf));
-		//Semaphore checking?
-		WRITE_TO_DPRAM(0, buf, 4);
-	}
-}
-
 static int __devinit dpram_probe(struct platform_device *dev)
 {
 	int retval;
@@ -2945,8 +2877,6 @@ static int __devinit dpram_probe(struct platform_device *dev)
 	/* @LDK@ check out missing interrupt from the phone */
 	//check_miss_interrupt();
 	
-	dpram_clear_magic_code();
-
 	return 0;
 }
 
@@ -2977,7 +2907,6 @@ static struct platform_driver platform_dpram_driver = {
 	.remove		= __devexit_p(dpram_remove),
 	.suspend	= dpram_suspend,
 	.resume 	= dpram_resume,
-	.shutdown	= dpram_shutdown,
 	.driver	= {
 		.name	= "dpram-device",
 	},

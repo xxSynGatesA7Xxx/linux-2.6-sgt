@@ -2124,7 +2124,7 @@ dhd_read_macaddr(dhd_info_t *dhd)
 #else
     char* nvfilepath       = "/data/.nvmac.info";
 #endif
-	int ret;
+	int ret = 0;
 
 	//MAC address copied from nv
 	fpnv = filp_open(nvfilepath, O_RDONLY, 0);
@@ -2143,11 +2143,11 @@ start_readmac:
 			oldfs = get_fs();
 			set_fs(get_ds());
 
-		/* Generating the Random Bytes for 3 last octects of the MAC address */
-		get_random_bytes(randommac, 3);
-		
-		sprintf(macbuffer,"%02X:%02X:%02X:%02X:%02X:%02X\n",
-			0x60,0xd0,0xa9,randommac[0],randommac[1],randommac[2]);
+			/* Generating the Random Bytes for 3 last octects of the MAC address */
+			get_random_bytes(randommac, 3);
+			
+			sprintf(macbuffer,"%02X:%02X:%02X:%02X:%02X:%02X\n",
+				0x60,0xd0,0xa9,randommac[0],randommac[1],randommac[2]);
 			DHD_INFO(("[WIFI] The Random Generated MAC ID : %s\n", macbuffer));
 			printk("[WIFI] The Random Generated MAC ID : %s\n", macbuffer);
 
@@ -2174,36 +2174,14 @@ start_readmac:
 			goto start_readmac;
 		}
 
-#if defined(CONFIG_TARGET_LOCALE_VZW) || defined(CONFIG_TARGET_LOCALE_KOR)
-		fp = filp_open(filepath, O_RDWR | O_CREAT, 0666);
-    	        if(IS_ERR(fp))
-		{
-    	                        fp = NULL;
-				DHD_ERROR(("[WIFI] %s: File open error\n", filepath));
-				return -1;
+		fp = filp_open(filepath, O_RDWR | O_CREAT, 0666); // File is always created.
+		if(IS_ERR(fp)) {
+			DHD_ERROR(("[WIFI] %s: File open error\n", filepath));
+			if (fpnv)
+				filp_close(fpnv, NULL);
+			return -1;
 		}
-
-			oldfs = get_fs();
-			set_fs(get_ds());
-                if(fp->f_mode & FMODE_WRITE)
-	        {
-				ret = fp->f_op->write(fp, (const char *)buf, sizeof(buf), &fp->f_pos);
-				if(ret < 0)
-					DHD_ERROR(("[WIFI] Mac address [%s] Failed to write into File: %s\n", buf, filepath));
-				else
-					DHD_INFO(("[WIFI] Mac address [%s] written into File: %s\n", buf, filepath));
-		}       
-			set_fs(oldfs);
-#else
-		fp = filp_open(filepath, O_RDONLY, 0);
-		if (IS_ERR(fp))   // If you want to write MAC address to /data/.mac.info once, 
-		{
-			fp = filp_open(filepath, O_RDWR | O_CREAT, 0666);
-			if(IS_ERR(fp)) {
-				DHD_ERROR(("[WIFI] %s: File open error\n", filepath));
-				return -1;
-			}
-
+		else {
 			oldfs = get_fs();
 			set_fs(get_ds());
 			
@@ -2215,9 +2193,10 @@ start_readmac:
 					DHD_INFO(("[WIFI] Mac address [%s] written into File: %s\n", buf, filepath));
 			}       
 			set_fs(oldfs);
-		} 
-#endif
-		ret = kernel_read(fp, 0, buf, 18);	
+
+			ret = kernel_read(fp, 0, buf, 18);	
+		}
+
 	}
 
 	if(ret)

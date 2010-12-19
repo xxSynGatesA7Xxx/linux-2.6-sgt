@@ -992,39 +992,39 @@ static int fimc_open(struct file *filp)
 		fimc2_buff = (unsigned int*)ioremap(ctrl->mem.base, ctrl->mem.size);
 		printk(KERN_DEBUG "dev:fimc2_buff:%x\n", fimc2_buff);
 		if(fimc2_buff)
-			{
+		{
 			memset(fimc2_buff, 0, ctrl->mem.size);
 			iounmap(fimc2_buff);
-			}
+		}
 		else
 		// workaround: prevent panic because of fail to ioremap (P1)
-			{
+		{
 			printk(KERN_ERR "dev:failed clear buff2 -> retry 2-half\n");
 			printk(KERN_ERR "dev:first half: base:%x, size:%x\n", ctrl->mem.base, ctrl->mem.size/2);
 			fimc2_buff = (unsigned int*)ioremap(ctrl->mem.base, ctrl->mem.size/2);
 			if(fimc2_buff)
-				{
+			{
 				memset(fimc2_buff, 0, ctrl->mem.size/2);
 				iounmap(fimc2_buff);
-				}
+			}
 			else
-				{
+			{
 				printk(KERN_ERR "dev:failed: first half\n");
-				}
+			}
 			
 			printk(KERN_ERR "dev:second half: base:%x, size:%x\n", ctrl->mem.base+ctrl->mem.size/2, ctrl->mem.size/2);
 			fimc2_buff = (unsigned int*)ioremap(ctrl->mem.base+ctrl->mem.size/2, ctrl->mem.size/2);
 			if(fimc2_buff)
-				{
+			{
 				memset(fimc2_buff, 0, ctrl->mem.size/2);
 				iounmap(fimc2_buff);
-				}
-			else
-				{
-				printk(KERN_ERR "dev:failed: second half\n");
-				}
-
 			}
+			else
+			{
+				printk(KERN_ERR "dev:failed: second half\n");
+			}
+
+		}
 	}
 #endif
 

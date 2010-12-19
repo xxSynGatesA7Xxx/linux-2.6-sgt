@@ -109,11 +109,6 @@ u32 smb136_is_fullcharging(void)
 	u8 data=0;
 	smb136_i2c_read(smb136_i2c_client, 0x36, &data);		
 	printk("SMB136 addr : 0x36 data : 0x%02x\n",data);
-	
-#ifdef CONFIG_TARGET_LOCALE_VZW
-	if ((data & 0x08) == 0x08)	// hanapark_P1 : return if charge error (2010-10-02)
-		return 0;
-#endif
 
 	if(data & 0x40)	// Charge current < Termination Current
 		return 1;
@@ -128,14 +123,9 @@ u32 smb136_is_already_fullcharged(void)
 	smb136_i2c_read(smb136_i2c_client, 0x36, &data);		
 	printk("SMB136 addr : 0x36 data : 0x%02x\n",data);
 
-#ifdef CONFIG_TARGET_LOCALE_VZW
-	if ((data & 0x08) == 0x08)	// hanapark_P1 : return if charge error (2010-10-02)
-		return 0;
-#endif
-
 	if((data & 0xc0) == 0xc0)	// At least one charge cycle terminated, Charge current < Termination Current
 		return 1;
-	else 
+	else
 		return 0;
 }
 
@@ -189,11 +179,7 @@ void smb136_charging(int source)
 		udelay(10);
 
 		//3. Set charge current to 1500mA
-#ifdef CONFIG_TARGET_LOCALE_VZW
-		data = 0xf2; //terminal Current 100mA 
-#else
 		data = 0xf4;
-#endif
 		
 		smb136_i2c_write(smb136_i2c_client,SMB_ChargeCurrent, data);
 		udelay(10);
@@ -214,11 +200,8 @@ void smb136_charging(int source)
 		udelay(10);
 
 		// 3. Set charge current to 500mA
-#ifdef CONFIG_TARGET_LOCALE_VZW
-		data = 0x12;
-#else
 		data = 0x14;
-#endif
+		
 		smb136_i2c_write(smb136_i2c_client,SMB_ChargeCurrent, data);
 		udelay(10);
 	}
@@ -305,11 +288,7 @@ void smb136_set_otg_mode(int enable)
 		udelay(10);
 
 		//5. Fast Charge Current set 500mA
-#ifdef CONFIG_TARGET_LOCALE_VZW
-		data = 0xf2;
-#else 
 		data = 0xf4;
-#endif
 		smb136_i2c_write(client, SMB_ChargeCurrent, data);
 		udelay(10);
 

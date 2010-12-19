@@ -216,7 +216,7 @@ void s5pv210_setup_sdhci_cfg_card(struct platform_device *dev,
 			ctrl3 = S3C_SDHCI_CTRL3_FCSELTX_BASIC |
 				S3C_SDHCI_CTRL3_FCSELRX_BASIC;
 		} else {
-#if defined (CONFIG_TARGET_LOCALE_EUR) || defined (CONFIG_TARGET_LOCALE_HKTW) || defined (CONFIG_TARGET_LOCALE_HKTW_FET) || defined (CONFIG_TARGET_LOCALE_USAGSM) || defined (CONFIG_TARGET_LOCALE_VZW)
+#if defined (CONFIG_TARGET_LOCALE_EUR) || defined (CONFIG_TARGET_LOCALE_HKTW) || defined (CONFIG_TARGET_LOCALE_HKTW_FET) || defined (CONFIG_TARGET_LOCALE_USAGSM)
 			if (card->type == MMC_TYPE_SD)
 				ctrl3 = S3C_SDHCI_CTRL3_FCSELTX_BASIC |
 					S3C_SDHCI_CTRL3_FCSELRX_BASIC;

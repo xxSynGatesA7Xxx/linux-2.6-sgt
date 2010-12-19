@@ -578,7 +578,7 @@ INC_UINT8 INC_FICDECODER(INC_UINT8 ucI2CID, ST_SIMPLE_FIC bSimpleFIC)
 
 			if(bSimpleFIC == SIMPLE_FIC_ENABLE)
 				return INC_SUCCESS;
-
+				
 #ifdef USER_APPLICATION_TYPE
             if(g_IsFactoryMode)
             {    
@@ -586,11 +586,11 @@ INC_UINT8 INC_FICDECODER(INC_UINT8 ucI2CID, ST_SIMPLE_FIC bSimpleFIC)
             }                
             else
             {
-			ucTimeOutCnt++;
+    			ucTimeOutCnt++;
 
-			if(ucTimeOutCnt >= 10 && pList->nPacketCnt && (pList->nPacketCnt == pList->nUserAppCnt)) {
-				return INC_SUCCESS;
-			}
+    			if(ucTimeOutCnt >= 10 && pList->nPacketCnt && (pList->nPacketCnt == pList->nUserAppCnt)) {
+    				return INC_SUCCESS;
+    			}
     		}
 			ucIsUserApp = INC_SUCCESS;
 #else

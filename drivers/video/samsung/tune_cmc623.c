@@ -238,9 +238,6 @@ typedef enum
 {
 	LCD_TYPE_VA,
 	LCD_TYPE_PLS,
-//	LCD_TYPE_T3,
-//	LCD_TYPE_T4,
-//	LCD_TYPE_T5,	
 	LCD_TYPE_MAX,
 }Lcd_Type;
 extern Lcd_Type lcd_type;
@@ -497,24 +494,24 @@ void cmc623_Mode_Change_Compare(mDNIe_data_type *mode, int cabc_enable)
 	
 	// brightness setting
 	if(setting_first || cabc_enable != cmc623_state.cabc_enabled)
-		{
+	{
 		if(cabc_enable)
-			{
+		{
 			//CABC brightness setting
 			cmc623_cabc_pwm_brightness_reg(cmc623_state.brightness);
 
-				cmc623_state.cabc_enabled = TRUE;
-				}
+			cmc623_state.cabc_enabled = TRUE;
+		}
+		else
+		{
+			//Manual brightness setting
+			if(setting_first)
+				cmc623_manual_pwm_brightness_reg_nosync(cmc623_state.brightness);
 			else
-				{
-				//Manual brightness setting
-				if(setting_first)
-					cmc623_manual_pwm_brightness_reg_nosync(cmc623_state.brightness);
-				else
-					cmc623_manual_pwm_brightness_reg(cmc623_state.brightness);
+				cmc623_manual_pwm_brightness_reg(cmc623_state.brightness);
 
 			cmc623_state.cabc_enabled = FALSE;
-			}
+		}
 		cmc623_Color_White_Change(cmc623_state.white,FALSE);
 		cmc623_Color_Saturation_Change(cmc623_state.saturation,FALSE);
 		cmc623_Color_Black_Change(cmc623_state.black,FALSE);	
@@ -716,7 +713,7 @@ bool cmc623_I2cWrite16( unsigned char Addr, unsigned long Data)
         printk("cmc623_I2cWrite16 g_client->adapter is NULL\n");
         return -ENODEV;
     }
-	
+
 	if(TRUE == cmc623_state.suspended)
 		{
         printk("cmc623 don't need writing while LCD off(a:%x,d:%x)\n", Addr, Data);
@@ -2434,7 +2431,7 @@ int tune_cmc623_suspend()
 	gpio_set_value(GPIO_CMC_SHDN, GPIO_LEVEL_HIGH);
 
 	// 1.8V off (optional, but all io lines shoud be all low or all high or all high-z while sleep for preventing leakage current)
-	
+
 	// Reset chip
 	//gpio_set_value(GPIO_CMC_RST, GPIO_LEVEL_LOW);
     msleep(100);
@@ -2465,7 +2462,7 @@ int tune_cmc623_pre_resume()
 	// 1.2V/1.8V/3.3V on
 	gpio_set_value(GPIO_CMC_EN, GPIO_LEVEL_HIGH);
 	msleep(1);
-	
+
 	return 0;
 }
 EXPORT_SYMBOL(tune_cmc623_pre_resume);
@@ -2589,7 +2586,7 @@ static ssize_t set_reg_store(struct device *dev, struct device_attribute *attr,c
 	return size;
 }
 
-static DEVICE_ATTR(set_reg, 0666, set_reg_show, set_reg_store);
+static DEVICE_ATTR(set_reg, S_IRUGO | S_IWUSR, set_reg_show, set_reg_store);
 
 static u32 read_reg_address=0;
 
@@ -2637,7 +2634,7 @@ static ssize_t read_reg_store(struct device *dev, struct device_attribute *attr,
 	return size;
 }
 
-static DEVICE_ATTR(read_reg, 0666, read_reg_show, read_reg_store);
+static DEVICE_ATTR(read_reg, S_IRUGO | S_IWUSR, read_reg_show, read_reg_store);
 
 static ssize_t show_regs_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -2680,7 +2677,7 @@ static ssize_t show_regs_store(struct device *dev, struct device_attribute *attr
 	return size;
 }
 
-static DEVICE_ATTR(show_regs, 0666, show_regs_show, show_regs_store);
+static DEVICE_ATTR(show_regs, S_IRUGO | S_IWUSR, show_regs_show, show_regs_store);
 
 static ssize_t set_bypass_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -2741,7 +2738,7 @@ static ssize_t set_bypass_store(struct device *dev, struct device_attribute *att
 	return size;
 }
 
-static DEVICE_ATTR(set_bypass, 0666, set_bypass_show, set_bypass_store);
+static DEVICE_ATTR(set_bypass, S_IRUGO | S_IWUSR, set_bypass_show, set_bypass_store);
 
 static ssize_t color_white_show(struct device *dev, struct device_attribute *attr, char *buf)
 {

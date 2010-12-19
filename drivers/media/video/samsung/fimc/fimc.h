@@ -325,7 +325,7 @@ struct fimc_effect {
 
 /* fimc controller abstration */
 struct fimc_control {
-	int				id;		/* controller id */
+	int				id;			/* controller id */
 	int				device_id;	/* sensor id */
 	int				device_onoff;	/* check flag for current state */
 	int				vt_mode;
@@ -352,9 +352,9 @@ struct fimc_control {
 	struct s3c_platform_camera	*cam;		/* activated camera */
 	struct fimc_capinfo		*cap;		/* capture dev info */
 	struct fimc_outinfo		*out;		/* output dev info */
-	struct fimc_fbinfo		fb;		/* fimd info */
-	struct fimc_scaler		sc;		/* scaler info */
-	struct fimc_effect		fe;		/* fimc effect info */
+	struct fimc_fbinfo		fb;			/* fimd info */
+	struct fimc_scaler		sc;			/* scaler info */
+	struct fimc_effect		fe;			/* fimc effect info */
 
 	enum fimc_status		status;
 	enum fimc_log			log;

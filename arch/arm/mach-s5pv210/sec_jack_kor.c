@@ -395,7 +395,7 @@ static void jack_detect_timer_handler(unsigned long arg)
 				}
 			}
 			else
-			{
+			{ 
 				printk("MICBIAS On\n");			
 				gpio_set_value(GPIO_MICBIAS_EN, 1);
 			}

@@ -927,7 +927,7 @@ int sipc_write(struct sipc *si, struct sk_buff_head *sbh)
 			skb_queue_purge(sbh);
 			return 0;
 		} else {
-		return r;
+			return r;
 		}
 	}
 

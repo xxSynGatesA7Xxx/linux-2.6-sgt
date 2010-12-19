@@ -16,16 +16,11 @@ obj-$(CONFIG_POWER_SUPPLY)	+= power_supply.o
 
 obj-$(CONFIG_PDA_POWER)		+= pda_power.o
 obj-$(CONFIG_BATTERY_S3C)	+= s3c_fake_battery.o
-
-ifeq ($(CONFIG_TARGET_LOCALE_VZW),y)
-obj-$(CONFIG_BATTERY_S5PC110)	+= s5pc110_battery_vzw.o
-else
 obj-$(CONFIG_BATTERY_S5PC110)	+= s5pc110_battery.o
-endif
-
 obj-$(CONFIG_APM_POWER)		+= apm_power.o
 obj-$(CONFIG_WM831X_POWER)	+= wm831x_power.o
 obj-$(CONFIG_WM8350_POWER)	+= wm8350_power.o
+
 obj-$(CONFIG_BATTERY_DS2760)	+= ds2760_battery.o
 obj-$(CONFIG_BATTERY_DS2782)	+= ds2782_battery.o
 obj-$(CONFIG_BATTERY_PMU)	+= pmu_battery.o

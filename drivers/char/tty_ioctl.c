@@ -127,19 +127,11 @@ EXPORT_SYMBOL(tty_throttle);
 
 void tty_unthrottle(struct tty_struct *tty)
 {
-#ifdef CONFIG_TARGET_LOCALE_VZW
-	//mutex_lock(&tty->termios_mutex);                 //[P1_VZW] comment out by jihyun82.kim
-#else
-          mutex_lock(&tty->termios_mutex);
-#endif
+	mutex_lock(&tty->termios_mutex);
 	if (test_and_clear_bit(TTY_THROTTLED, &tty->flags) &&
 	    tty->ops->unthrottle)
 		tty->ops->unthrottle(tty);
-#ifdef CONFIG_TARGET_LOCALE_VZW
-	//mutex_unlock(&tty->termios_mutex);               //[P1_VZW] comment out by jihyun82.kim
-#else
-          mutex_unlock(&tty->termios_mutex);
-#endif
+	mutex_unlock(&tty->termios_mutex);
 }
 EXPORT_SYMBOL(tty_unthrottle);
 

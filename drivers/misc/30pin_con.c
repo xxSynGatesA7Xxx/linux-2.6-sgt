@@ -157,17 +157,9 @@ static ssize_t acc_check_read(struct device *dev, struct device_attribute *attr,
 		else if(CONNECTED_ACC == ACC_LINEOUT)
 			connected |= (0x1<<4);
 	}
-#if defined (CONFIG_TARGET_LOCALE_KOR)
-//HW rev09 hpd is pull up by vcc1.8PDA   
-	if(HWREV > 11 ) 
-	{
-		if(gpio_get_value(GPIO_HDMI_HPD))
-			connected |= (0x1<<5);
-	}
-#else	
 	if(gpio_get_value(GPIO_HDMI_HPD))
 		connected |= (0x1<<5);
-#endif
+
 	//connected = ((DOCK_STATE<<0)|(CONNECTED_DOCK<<4)|(ACC_STATE<<8)|(CONNECTED_ACC<<12));
 	count = sprintf(buf,"%d\n", connected );
 	ACC_CONDEV_DBG("%x",connected);
@@ -314,7 +306,7 @@ void acc_con_intr_handle(struct work_struct *_work)
 			}
 			else
 #endif				
-        	{				
+        	{
 #ifdef CONFIG_MHL_SII9234
 				CONNECTED_DOCK = DOCK_DESK;
 				//max8998_ldo3_8_control(1,LDO_TV_OUT); //ldo 3,8 on
@@ -531,7 +523,7 @@ void acc_MHD_interrupt_init(void)
 
 
 static int acc_con_probe(struct platform_device *pdev)
-{	
+{
 	int 	retval;
 	
 	ACC_CONDEV_DBG("");	
@@ -657,7 +649,7 @@ static int acc_con_resume(struct platform_device *pdev)
 			//msleep(120);
 			
 			//call MHL init 
-		sii9234_tpi_init();
+			sii9234_tpi_init();
 #endif
 		}
 

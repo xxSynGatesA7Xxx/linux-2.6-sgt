@@ -561,7 +561,7 @@ static int l3g4200d_open(struct inode *inode, struct file *file)
 		return -1;
 	}
 	device_init();
-
+	
 	mdelay(300);
 	
 	fd_cnt++;
@@ -575,9 +575,9 @@ static int l3g4200d_open(struct inode *inode, struct file *file)
 /*  release command for l3g4200d device file */
 static int l3g4200d_close(struct inode *inode, struct file *file)
 {
-	#if DEBUG
+#if DEBUG
 	printk(KERN_INFO "L3G4200D has been closed\n");
-	#endif
+#endif
 	fd_cnt--;
 	
 #if DEBUG

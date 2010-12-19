@@ -313,22 +313,22 @@ static void rx_complete(struct usb_ep *ep, struct usb_request *req)
 
 		skb2 = skb_dequeue(&dev->rx_frames);
 		while (skb2) {
-		if (status < 0
+			if (status < 0
 					|| ETH_HLEN > skb2->len
 					|| skb2->len > ETH_FRAME_LEN) {
-			dev->net->stats.rx_errors++;
-			dev->net->stats.rx_length_errors++;
+				dev->net->stats.rx_errors++;
+				dev->net->stats.rx_length_errors++;
 				DBG(dev, "rx length %d\n", skb2->len);
 				dev_kfree_skb_any(skb2);
 				goto next_frame;
-		}
+			}
 			skb2->protocol = eth_type_trans(skb2, dev->net);
-		dev->net->stats.rx_packets++;
+			dev->net->stats.rx_packets++;
 			dev->net->stats.rx_bytes += skb2->len;
 
-		/* no buffer copies needed, unless hardware can't
-		 * use skb buffers.
-		 */
+			/* no buffer copies needed, unless hardware can't
+			 * use skb buffers.
+			 */
 			status = netif_rx(skb2);
 next_frame:
 			skb2 = skb_dequeue(&dev->rx_frames);
@@ -347,7 +347,7 @@ next_frame:
 		defer_kevent(dev, WORK_RX_MEMORY);
 quiesce:
 		dev_kfree_skb_any(skb);
-	goto clean;
+		goto clean;
 
 	/* data overrun */
 	case -EOVERFLOW:
@@ -543,7 +543,7 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 				type = USB_CDC_PACKET_TYPE_BROADCAST;
 			else
 				type = USB_CDC_PACKET_TYPE_ALL_MULTICAST;
-			if (!(cdc_filter & type)) {				
+			if (!(cdc_filter & type)) {
 				dev_kfree_skb_any(skb);
 				return NETDEV_TX_OK;
 			}
@@ -589,14 +589,14 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 #ifdef CONFIG_USB_GADGET_S3C_OTGD_DMA_MODE
 	/* To fulfill double word alignment requirement*/
 	req->buf = kmalloc(skb->len, GFP_ATOMIC | GFP_DMA);
-	if (!req->buf) {
-	req->buf = skb->data;
+	if(!req->buf) {
+		req->buf = skb->data;
 		printk("%s:: failed to kmalloc\n",__func__);
 	}
 	else {
-		memcpy((void *)req->buf, (void *)skb->data, skb->len);
+		memcpy((void *) req->buf,(void *) skb->data,skb->len);
 	}
-
+	
 #else
 	req->buf = skb->data;
 #endif

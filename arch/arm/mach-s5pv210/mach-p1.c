@@ -2532,13 +2532,13 @@ static void modemctl_cfg_gpio(void)
 	unsigned gpio_sim_ndetect = mdmctl_data.gpio_sim_ndetect;
 
 	if (HWREV < 7) {
-	err = gpio_request(gpio_phone_on, "PHONE_ON");
-	if (err) {
-		printk("fail to request gpio %s\n","PHONE_ON");
-	} else {
-		gpio_direction_output(gpio_phone_on, GPIO_LEVEL_LOW);
-		s3c_gpio_setpull(gpio_phone_on, S3C_GPIO_PULL_NONE);
-	}
+		err = gpio_request(gpio_phone_on, "PHONE_ON");
+		if (err) {
+			printk("fail to request gpio %s\n","PHONE_ON");
+		} else {
+			gpio_direction_output(gpio_phone_on, GPIO_LEVEL_LOW);
+			s3c_gpio_setpull(gpio_phone_on, S3C_GPIO_PULL_NONE);
+		}
 	}
 	
 	err = gpio_request(gpio_cp_rst, "CP_RST");
@@ -3665,7 +3665,7 @@ static void smdkc110_power_off (void)
 #endif			
 		{
 			kernel_sec_clear_upload_magic_number();
-
+		
 			/* POWER_N -> Input */
 			s3c_gpio_cfgpin(GPIO_nPOWER, S3C_GPIO_INPUT);
 			s3c_gpio_setpull(GPIO_nPOWER, S3C_GPIO_PULL_NONE);

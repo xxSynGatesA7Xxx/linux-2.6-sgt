@@ -220,12 +220,12 @@ static void xmm_on(struct modemctl *mc)
 	gpio_set_value(mc->gpio_cp_reset, 0);
 	if(mc->gpio_reset_req_n)
 		gpio_direction_output(mc->gpio_reset_req_n, 0);
-	
+
 	msleep(100);
 
 	//gpio_set_value(mc->gpio_cp_reset, 1);
 	if(mc->gpio_phone_on)
-	gpio_set_value(mc->gpio_phone_on, 1);
+		gpio_set_value(mc->gpio_phone_on, 1);
 	gpio_set_value(mc->gpio_cp_reset, 0);
 	msleep(100);  /* no spec, confirm later exactly how much time
 			needed to initialize CP with RESET_PMU_N */
@@ -249,7 +249,7 @@ static void xmm_off(struct modemctl *mc)
 		return;
 
 	if(mc->gpio_phone_on)
-	gpio_set_value(mc->gpio_phone_on, 0);
+		gpio_set_value(mc->gpio_phone_on, 0);
 	gpio_set_value(mc->gpio_cp_reset, 0);
 }
 

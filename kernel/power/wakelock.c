@@ -597,8 +597,7 @@ int has_audio_wake_lock(void)
 		
 	if (has_wake_lock_internal("AudioOutLock") &&	// MIDAS[2010.07.16]@Wakelock name was changed
 //	if (has_wake_lock_internal("AudioLock") &&		// MIDAS[2010.07.09]@Wakelock name of Audio playback is "AudioLock" in P1-Froyo
-		!has_wake_lock_internal("vbus_present") && 
-		!has_wake_lock_internal("bt-rfkill")) 			// MIDAS[2010.09.29]@BT wakelock check
+		!has_wake_lock_internal("vbus_present")) 
 	{
 		ret = 1;
 		return ret;
