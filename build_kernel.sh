@@ -21,6 +21,6 @@ mv kernel_update.zip ../"$DATE"_test_"$CONFIG".zip
 
 cd kernel_update
 tar --format=ustar -cf kernel_update.tar zImage
-mv kernel_update.tar "$DATE"_test_"$CONFIG".tar
+mv kernel_update.tar ../../"$DATE"_test_"$CONFIG".tar
 cd ../..
 
