@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DATE=$(date +%m%d_H%M)
+DATE=$(date +%m%d_%H%M)
 DEVICE="GalaxyTab"
 TOOLCHAIN="../arm-2009q3/bin/arm-none-linux-gnueabi-"
 
